@@ -1,0 +1,12 @@
+# Runtime dependencies for the DSH Douyin plugin (hot / search / video / IM).
+# Python 3.10+.
+#
+#   python -m venv .venv
+#   .venv/bin/pip install -r python/requirements.txt      # Linux / macOS
+#   .venv\Scripts\pip install -r python\requirements.txt  # Windows
+#
+# playwright drives a *system* browser. On Windows that is the installed Edge;
+# on Linux/macOS run `playwright install chromium` (or install a distro
+# chromium), or point DOUYIN_BROWSER at an existing binary.
+dy-cli==0.2.2
+playwright>=1.40

@@ -1,0 +1,21 @@
+# Normalize line endings: LF in the repository, LF on checkout everywhere.
+* text=auto eol=lf
+
+# Shell / Python scripts must keep LF so shebangs and here-docs work on Linux.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Windows-only helper scripts keep CRLF for Notepad compatibility.
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary / generated assets
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.zip  binary

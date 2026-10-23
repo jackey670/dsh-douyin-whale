@@ -1,0 +1,34 @@
+# ── 凭证与运行时数据（绝对不要提交）────────────────────────────────
+data/
+*.cookie
+*cookies*.json
+storage_state*.json
+.env
+.env.*
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Node / DSH ────────────────────────────────────────────────────────
+node_modules/
+pnpm-lock.yaml
+
+# ── 日志与产物 ────────────────────────────────────────────────────────
+*.log
+*.zip
+*.mp4
+*.part
+
+# ── 编辑器 / 系统 ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

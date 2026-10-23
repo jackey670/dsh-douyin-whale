@@ -1,0 +1,9 @@
+# Extra dependencies for the optional local HTTP API (python/douyin_http.py).
+# Install this instead of requirements.txt when you want the HTTP service:
+#
+#   .venv/bin/pip install -r python/requirements-http.txt
+#
+# It is a superset of requirements.txt.
+-r requirements.txt
+fastapi>=0.110
+uvicorn>=0.27

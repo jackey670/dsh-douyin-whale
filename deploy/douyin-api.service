@@ -1,0 +1,40 @@
+# systemd unit 模板 —— 可选，用于在 Linux 服务器上常驻 HTTP API。
+#
+# 安装：
+#   sudo cp deploy/douyin-api.service /etc/systemd/system/douyin-api.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now douyin-api
+#
+# 安装前请把 User= / WorkingDirectory= / ExecStart= 改成你自己的路径。
+# 环境变量（含 DOUYIN_IM_ALLOW_SEND）建议放 /etc/dsh-douyin.env，
+# 权限设为 600，并在里面只写非默认值。
+
+[Unit]
+Description=Douyin HTTP API (dsh-douyin)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# ↓↓↓ 改成实际运行用户与仓库路径 ↓↓↓
+User=CHANGE_ME
+WorkingDirectory=/opt/dsh-douyin
+EnvironmentFile=-/etc/dsh-douyin.env
+ExecStart=/opt/dsh-douyin/.venv/bin/python /opt/dsh-douyin/python/douyin_http.py
+Environment=PYTHONUTF8=1
+Environment=PYTHONIOENCODING=utf-8
+Environment=DOUYIN_HTTP_HOST=127.0.0.1
+Environment=DOUYIN_HTTP_PORT=7709
+
+# 安全默认值：私信真实发送保持关闭。
+# 真要开启，在 /etc/dsh-douyin.env 里写 DOUYIN_IM_ALLOW_SEND=1，
+# 并清楚知道自己承担什么风险。
+Environment=DOUYIN_IM_ALLOW_SEND=0
+
+Restart=on-failure
+RestartSec=5
+# Playwright/Chromium 需要进程数；2G 小机器别开高并发
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

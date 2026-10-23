@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>抖音私信 DOM fixture（本地模拟，非真实站点）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #161823; color: #eee; }
+  .chatLayout { display: flex; height: 100vh; }
+  .left { width: 340px; border-right: 1px solid #333; display: flex; flex-direction: column; }
+  .searchInput { margin: 12px; padding: 10px; border-radius: 8px; border: 1px solid #444;
+                 background: #222; color: #eee; }
+  .SearchPanelitems { overflow: auto; }
+  .SearchPanelitembox { display: flex; align-items: center; justify-content: space-between;
+                        padding: 10px 14px; border-bottom: 1px solid #2a2a2a; cursor: pointer; }
+  .SearchPanelitemtitle { font-size: 14px; }
+  .SearchPanelitemchat_btn { font-size: 12px; padding: 4px 10px; border-radius: 12px;
+                             border: 1px solid #fe2c55; color: #fe2c55; background: none;
+                             cursor: pointer; }
+  .conversationConversationItem { padding: 10px 14px; border-bottom: 1px solid #2a2a2a;
+                                  cursor: pointer; }
+  .conversationConversationItemtitle { font-size: 14px; }
+  .conversationConversationItemmsg { font-size: 12px; color: #888; }
+  .rightPanel { flex: 1; display: flex; flex-direction: column; }
+  .rightPanel[hidden] { display: none; }
+  .RightPanelHeader { padding: 14px 18px; border-bottom: 1px solid #333; }
+  .RightPanelHeadertitle { font-weight: 600; }
+  .messageMessageListlist { flex: 1; overflow: auto; padding: 16px; }
+  .messageMessageBox { display: flex; margin-bottom: 10px; }
+  .messageMessageBox.isFromMe { justify-content: flex-end; }
+  .messageMessageBoxcontentBox { max-width: 60%; padding: 8px 12px; border-radius: 10px;
+                                 background: #2f2f38; white-space: pre-wrap; }
+  .messageMessageBox.isFromMe .messageMessageBoxcontentBox { background: #fe2c55; }
+  .messageMsgInput { display: flex; gap: 10px; padding: 12px; border-top: 1px solid #333; }
+  .messageEditorinputArea { flex: 1; min-height: 44px; padding: 10px; border-radius: 8px;
+                            background: #222; outline: none; }
+  .messageMsgInputpublishBtn { padding: 0 18px; border-radius: 8px; border: none;
+                               background: #fe2c55; color: #fff; cursor: pointer; }
+  .hint { padding: 8px 14px; color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="chatLayout">
+  <div class="left">
+    <input class="searchInput" placeholder="搜索联系人" />
+    <div class="hint" id="hint">输入昵称搜索（fixture 内置：小测试 / 同学群）</div>
+    <div class="SearchPanelitems" id="results"></div>
+    <div class="conversationList" id="convs">
+      <div class="conversationConversationItem" data-e2e="conversation-item" data-name="小测试">
+        <div class="conversationConversationItemtitle">小测试</div>
+        <div class="conversationConversationItemmsg">在吗</div>
+      </div>
+      <div class="conversationConversationItem" data-e2e="conversation-item" data-name="同学群(7)">
+        <div class="conversationConversationItemtitle">同学群(7)</div>
+        <div class="conversationConversationItemmsg">[图片]</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rightPanel" id="panel" hidden>
+    <div class="RightPanelHeader"><div class="RightPanelHeadertitle" id="title"></div></div>
+    <div class="messageMessageListlist" id="msgs"></div>
+    <div class="messageMsgInput">
+      <div class="messageEditorinputArea" contenteditable="true" data-contents="true"
+           data-placeholder="发送消息..."></div>
+      <button class="messageMsgInputpublishBtn" id="publish">发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PEOPLE = {
+    "小测试": {kind: "user"},
+    "同学群": {kind: "group", members: 7}
+  };
+  const results = document.getElementById('results');
+  const panel = document.getElementById('panel');
+  const title = document.getElementById('title');
+  const msgs = document.getElementById('msgs');
+  const editor = document.querySelector('.messageEditorinputArea');
+  let current = null;
+
+  // 模拟搜索结果：输入 >=1 字符即出现结果行
+  document.querySelector('.searchInput').addEventListener('input', (e) => {
+    const q = e.target.value.trim();
+    results.innerHTML = '';
+    if (!q) return;
+    Object.keys(PEOPLE).forEach((name) => {
+      if (!name.includes(q) && !q.includes(name)) return;
+      const meta = PEOPLE[name];
+      const row = document.createElement('div');
+      row.className = 'SearchPanelitembox';
+      const label = meta.kind === 'group' ? `${name}(${meta.members})` : name;
+      row.innerHTML = `<div class="SearchPanelitemtitle">${label}</div>`;
+      const btn = document.createElement('button');
+      btn.className = 'SearchPanelitemchat_btn';
+      btn.textContent = '发消息';
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openChat(label);
+      });
+      row.appendChild(btn);
+      results.appendChild(row);
+    });
+  });
+
+  // 会话行点击也能打开
+  document.querySelectorAll('.conversationConversationItem').forEach((row) => {
+    row.addEventListener('click', () => openChat(row.dataset.name));
+  });
+
+  function openChat(name) {
+    current = name;
+    panel.hidden = false;
+    title.textContent = name;
+    msgs.innerHTML = '';
+  }
+
+  // 发送：把编辑器文本渲染成"自己发出的"气泡
+  document.getElementById('publish').addEventListener('click', () => {
+    const text = (editor.innerText || '').trim();
+    if (!text) return;
+    const box = document.createElement('div');
+    box.className = 'messageMessageBox messageBoxisFromMe isFromMe';
+    box.innerHTML = `<div class="messageMessageBoxcontentBox messageMessageBoxisFromMe">
+                       <span data-e2e="msg-item-content"></span></div>`;
+    box.querySelector('[data-e2e="msg-item-content"]').textContent = text;
+    msgs.appendChild(box);
+    editor.innerHTML = '';
+  });
+
+  // 进入页面默认把搜索框当作已就绪（真实站点是异步挂载）
+  document.querySelector('.searchInput').focus();
+</script>
+</body>
+</html>

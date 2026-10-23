@@ -1,0 +1,34 @@
+# dsh-douyin bundle patch.
+# The Loader inserts this plugin row; the config below is the default and may be
+# overridden by a same-id row in the profile's cordis.patch.yml.
+- insert:
+    - id: douyin
+      name: dsh-douyin
+      config:
+        enabled: true
+        writesEnabled: false
+        toolEnabled:
+          hot: true
+          search: true
+          video: true
+          user: true
+          status: true
+          login: true
+          verify: true
+          comment: true
+          publish: true
+        maxResults: 20
+        maxSearchPages: 3
+        hourlyRequestBudget: 60
+        pageDelayMinMs: 3000
+        pageDelayMaxMs: 8000
+        callDelayMinMs: 1800
+        callDelayMaxMs: 3200
+        # Leave empty to auto-detect:
+        #   pythonPath → <repo>/.venv/bin/python (or Scripts\python.exe)
+        #   edgePath   → Edge on Windows, Chromium/Chrome on Linux/macOS
+        #   dataDir    → <repo>/data
+        pythonPath: ""
+        dataDir: ""
+        edgePath: ""
+        logLevel: info

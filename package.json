@@ -1,0 +1,59 @@
+{
+  "name": "dsh-douyin",
+  "version": "1.1.0",
+  "description": "Douyin toolkit for DeepSeek Harness: hot list, search, video reading with native vision frames, and a guarded Playwright DM/group driver — plus a local HTTP API.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/*.js",
+    "python/*.py",
+    "python/requirements.txt",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs",
+    "examples/*.yml",
+    "scripts"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "douyin",
+    "dy-cli",
+    "playwright",
+    "douyin-im",
+    "http-api"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JianHeShui/dsh-douyin.git"
+  },
+  "homepage": "https://github.com/JianHeShui/dsh-douyin",
+  "bugs": {
+    "url": "https://github.com/JianHeShui/dsh-douyin/issues"
+  },
+
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "check": "node --check index.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js",
+    "http": "python python/douyin_http.py",
+    "test:fixture": "python tests/test_fixture.py"
+  }
+}

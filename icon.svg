@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Douyin Tools">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1035"/>
+      <stop offset="0.55" stop-color="#2d1b5e"/>
+      <stop offset="1" stop-color="#0d2233"/>
+    </linearGradient>
+    <linearGradient id="note" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4ce0d0"/>
+      <stop offset="0.5" stop-color="#6aa8ff"/>
+      <stop offset="1" stop-color="#ff5fa2"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+  <path d="M104 78c0-7 6-11 12-8l64 32c7 4 7 14 0 18l-64 32c-6 3-12-1-12-8V78z" fill="url(#note)"/>
+  <path d="M98 184c-14 0-26-9-26-21s12-21 26-21c4 0 8 1 11 2v-42l14 7v49c0 15-11 26-25 26z" fill="url(#note)" opacity="0.95"/>
+  <circle cx="188" cy="186" r="7" fill="#4ce0d0" opacity="0.9"/>
+  <circle cx="206" cy="166" r="5" fill="#6aa8ff" opacity="0.8"/>
+  <circle cx="214" cy="194" r="4" fill="#ff5fa2" opacity="0.85"/>
+</svg>

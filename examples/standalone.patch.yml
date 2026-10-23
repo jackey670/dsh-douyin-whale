@@ -1,0 +1,33 @@
+# Standalone overlay for mounting the plugin WITHOUT the bundle manager.
+# Do not combine this with an installed dsh-douyin bundle: that would insert
+# the same plugin id twice.
+#
+# Usage:
+#   dsh --profile desktop --patch <path-to-this-file>
+- insert:
+    - id: douyin
+      name: dsh-douyin
+      config:
+        enabled: true
+        writesEnabled: false
+        toolEnabled:
+          hot: true
+          search: true
+          video: true
+          user: true
+          status: true
+          login: true
+          verify: true
+          comment: true
+          publish: true
+        maxResults: 20
+        maxSearchPages: 3
+        hourlyRequestBudget: 60
+        pageDelayMinMs: 3000
+        pageDelayMaxMs: 8000
+        callDelayMinMs: 1800
+        callDelayMaxMs: 3200
+        pythonPath: ""
+        dataDir: ""
+        edgePath: ""
+        logLevel: info
