@@ -236,7 +236,6 @@ def launch_context(playwright, headless: bool = False):
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-sync",
-            "--disable-blink-features=AutomationControlled",
             "--lang=zh-CN",
         ],
         "viewport": {"width": 1280, "height": 900},

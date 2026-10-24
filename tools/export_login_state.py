@@ -80,7 +80,7 @@ async def run(args) -> int:
                 os.path.abspath(args.profile),
                 executable_path=exe,
                 headless=False,
-                args=["--no-first-run", "--disable-blink-features=AutomationControlled"],
+                args=["--no-first-run"],
                 viewport={"width": 1280, "height": 900},
                 locale="zh-CN",
             )
@@ -88,7 +88,7 @@ async def run(args) -> int:
             browser = await pw.chromium.launch(
                 executable_path=exe,
                 headless=False,
-                args=["--no-first-run", "--disable-blink-features=AutomationControlled"],
+                args=["--no-first-run"],
             )
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 900},

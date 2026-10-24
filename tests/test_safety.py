@@ -1,6 +1,6 @@
 """Static safety checks for this fork.
 
-The upstream login bridge injected a small STEALTH_JS script to hide
+The early login bridge injected a small STEALTH_JS script to hide
 ``navigator.webdriver`` and fake ``window.chrome`` / plugins. This fork removes
 that behavior: the browser must be a real system browser, and verification
 pages must be completed by a human.
@@ -21,6 +21,7 @@ FORBIDDEN_CODE_MARKERS = (
     "Object.defineProperty(navigator, 'webdriver'",
     "Object.defineProperty(navigator, \"webdriver\"",
     "navigator.plugins",
+    "--disable-blink-features=AutomationControlled",
 )
 
 

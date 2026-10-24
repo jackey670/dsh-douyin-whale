@@ -124,8 +124,7 @@ async def main() -> int:
         browser = await pw.chromium.launch(
             executable_path=D.CHROME,
             headless=D.resolve_headless(),
-            args=["--no-sandbox", "--disable-dev-shm-usage",
-                  "--disable-blink-features=AutomationControlled"],
+            args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
         ctx = await browser.new_context(**ctx_kwargs)
         page = await ctx.new_page()

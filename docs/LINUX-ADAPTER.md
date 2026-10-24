@@ -45,7 +45,7 @@
   的进程，不会误伤别的浏览器；
 - `python/douyin_im.py` 的 `kill_stale_browsers()` 用
   `pgrep -af playwright_chromiumdev_profile` 再按本驱动独有的启动参数
-  （`--no-sandbox` + `AutomationControlled`）精确匹配，避免杀掉 dy-cli 同时
+  （`--no-sandbox` + `--disable-dev-shm-usage`）精确匹配，避免杀掉 dy-cli 同时
   在跑的浏览器；
 - Windows 保持原逻辑。
 

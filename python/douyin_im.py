@@ -347,7 +347,6 @@ async def new_context(pw, cookie_file: str | None):
         args=[
             "--no-sandbox",
             "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled",
             "--disable-gpu",
         ],
     )
@@ -1014,7 +1013,7 @@ def kill_stale_browsers() -> int:
     不能用 `pkill -f playwright_chromiumdev_profile` 一刀切：dy-cli（/trending、
     /search 用的那个）同样是 `chromium.launch()`，临时目录名一模一样，一刀切会
     把别的接口正在跑的浏览器杀掉。这里按本驱动独有的启动参数（--no-sandbox +
-    --disable-blink-features=AutomationControlled）精确匹配。
+    --disable-dev-shm-usage）精确匹配。
     """
     killed = 0
     if os.name == "nt":
@@ -1026,7 +1025,7 @@ def kill_stale_browsers() -> int:
                              capture_output=True, text=True, timeout=10).stdout
         for line in (out or "").splitlines():
             pid, _, cmd = line.partition(" ")
-            if "--no-sandbox" in cmd and "AutomationControlled" in cmd:
+            if "--no-sandbox" in cmd and "--disable-dev-shm-usage" in cmd:
                 try:
                     os.kill(int(pid), 9)
                     killed += 1
