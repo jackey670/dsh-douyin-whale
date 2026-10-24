@@ -380,7 +380,6 @@ function startDaemon() {
 
   // 预启动 HTTP API，避免 agent 每次调用时 on-demand spawn 弹窗
   try {
-    const { spawn } = await_import('node:child_process')
     const py = process.env.DOUYIN_PYTHON || path.join(ROOT, '.venv', 'Scripts', 'python.exe')
     const serverScript = path.join(ROOT, 'python', 'douyin_http.py')
     if (fs.existsSync(py) && fs.existsSync(serverScript)) {
@@ -401,9 +400,6 @@ function startDaemon() {
   setInterval(() => { tick().catch(e => log(`[tick] 异常: ${e.message}`)) }, TICK_MS)
   console.log(`douyin-whale 调度器已启动（PID ${process.pid}），Ctrl+C 停止。`)
 }
-
-// 简易 await import（避免顶层 await 影响 CLI 分支）
-function await_import(mod) { return import(mod) }
 
 function stopDaemon() {
   const pid = daemonPid()
