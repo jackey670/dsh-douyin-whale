@@ -337,7 +337,8 @@ function status() {
 
 function daemonPid() {
   try {
-    const pid = Number(fs.readFileSync(PID_FILE, 'utf8'))
+    const raw = fs.readFileSync(PID_FILE, 'utf8').trim()
+    const pid = raw.startsWith('{') ? (JSON.parse(raw).pid ?? 0) : Number(raw)
     return isAlive(pid) ? pid : 0
   } catch { return 0 }
 }
