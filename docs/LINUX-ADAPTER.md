@@ -1,18 +1,18 @@
 # Linux 适配说明
 
-本项目在上游 `SakuraMat0u/dsh-douyin-toolkit`（Windows + Edge）的基础上，补了
+本项目在初始版本的基础上，补了
 在无图形界面的 Linux 服务器上运行所需的改动。这份文档说明**改了什么、为什么改、
 还有什么做不到**。
 
 ## 1. 浏览器发现
 
-上游只认 Windows 的 Edge 安装路径。现在按优先级查找：
+初始版本只认 Windows 的 Edge 安装路径。现在按优先级查找：
 
 | 优先级 | 来源 |
 |---|---|
 | 1 | `config.edgePath`（`cordis.patch.yml`） |
 | 2 | `DOUYIN_BROWSER` 环境变量 |
-| 3 | `DOUYIN_EDGE_PATH` 环境变量（兼容上游） |
+| 3 | `DOUYIN_EDGE_PATH` 环境变量（兼容初始版本） |
 | 4 | 项目内 `bin/chromium` |
 | 5 | 系统包：`/usr/bin/chromium`、`/usr/bin/chromium-browser`、`/usr/bin/google-chrome`、`/snap/bin/chromium` |
 | 6 | Playwright 自带 Chromium（`~/.cache/ms-playwright/chromium-<rev>/...`，版本号目录用 glob 扫描） |
@@ -21,13 +21,13 @@
 涉及文件：`lib/backend.js`（`resolveBrowser()`）、`python/douyin_bridge.py`
 （`edge_path()`）、`python/douyin_im.py`（`discover_browser()`）。
 
-> 上游文档要求手动 `ln -sfn` 一个 `bin/chromium` 符号链接，并在 Playwright
+> 初始版本文档要求手动 `ln -sfn` 一个 `bin/chromium` 符号链接，并在 Playwright
 > 升级后重建。现在**不再需要**：`bin/chromium` 仍然优先，但找不到时会自动
 > 扫描 Playwright 的缓存目录。
 
 ## 2. headless 降级
 
-上游假设有真实窗口（扫码需要人看）。现在的行为：
+初始版本假设有真实窗口（扫码需要人看）。现在的行为：
 
 - `python/douyin_bridge.py` 的 `resolve_headless()`：
   - `DOUYIN_HEADLESS=1/0` 显式指定时优先；
@@ -39,7 +39,7 @@
 
 ## 3. 进程清理
 
-上游用 PowerShell + `Get-CimInstance` 找并杀掉占用 profile 的 Edge。现在：
+初始版本用 PowerShell + `Get-CimInstance` 找并杀掉占用 profile 的 Edge。现在：
 
 - POSIX 分支用 `pkill -f <profile 目录>`，只杀命令行里带**本项目 profile 路径**
   的进程，不会误伤别的浏览器；
@@ -51,7 +51,7 @@
 
 ## 4. 私信 / 群聊驱动
 
-`python/douyin_im.py` 是上游没有的新模块：
+`python/douyin_im.py` 是新增模块：
 
 - Playwright 驱动 `https://www.douyin.com/chat`；
 - DOM 选择器带多级兜底（`data-e2e` → class 前缀 → 文案），前端改版后可用
@@ -78,7 +78,7 @@
 
 ## 6. 路径全部参数化
 
-上游代码里写死的 `<repo>/.venv`、`<repo>/data` 等相对路径保留，但服务器上原本
+初始代码里写死的 `<repo>/.venv`、`<repo>/data` 等相对路径保留，但服务器上原本
 散落的绝对路径已全部改成环境变量（`DOUYIN_DATA_DIR`、`DOUYIN_PYTHON`、
 `DOUYIN_BROWSER`、`DOUYIN_MEDIA_DIR`、`DOUYIN_COOKIE_FILE` 等），见
 [`.env.example`](../.env.example)。

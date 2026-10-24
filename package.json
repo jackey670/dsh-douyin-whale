@@ -1,7 +1,7 @@
 {
-  "name": "dsh-douyin",
-  "version": "1.1.0",
-  "description": "Douyin toolkit for DeepSeek Harness: hot list, search, video reading with native vision frames, and a guarded Playwright DM/group driver — plus a local HTTP API.",
+  "name": "dsh-douyin-whale",
+  "version": "1.2.0",
+  "description": "Douyin toolkit for Dafeiyu (大肥鱼): hot list, search, video frames, guarded DM/group, local HTTP API.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -28,6 +28,8 @@
     "dsh",
     "dsh-plugin",
     "douyin",
+    "dafeiyu",
+    "whale",
     "dy-cli",
     "playwright",
     "douyin-im",
@@ -36,11 +38,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JianHeShui/dsh-douyin.git"
+    "url": "git+https://github.com/jackey670/dsh-douyin-whale.git"
   },
-  "homepage": "https://github.com/JianHeShui/dsh-douyin",
+  "homepage": "https://github.com/jackey670/dsh-douyin-whale",
   "bugs": {
-    "url": "https://github.com/JianHeShui/dsh-douyin/issues"
+    "url": "https://github.com/jackey670/dsh-douyin-whale/issues"
   },
 
   "engines": {

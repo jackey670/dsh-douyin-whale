@@ -1,9 +1,9 @@
-# dsh-douyin bundle patch.
+# dsh-douyin-whale bundle patch.
 # The Loader inserts this plugin row; the config below is the default and may be
 # overridden by a same-id row in the profile's cordis.patch.yml.
 - insert:
-    - id: douyin
-      name: dsh-douyin
+    - id: douyin-whale
+      name: dsh-douyin-whale
       config:
         enabled: true
         writesEnabled: false

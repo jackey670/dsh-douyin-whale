@@ -1,5 +1,5 @@
 /**
- * dsh-douyin-toolkit — a Cordis Host plugin that exposes Douyin read tools, a
+ * dsh-douyin-whale — a Cordis Host plugin that exposes Douyin read tools, a
  * pollable QR/SMS login state machine, one guarded comment tool, and a
  * reserved publish interface.
  *
@@ -31,7 +31,7 @@ const TOOL_SWITCH = {
   douyin_publish: 'publish',
 };
 
-export const name = 'douyin';
+export const name = 'douyin-whale';
 export const inject = ['tools'];
 
 /**

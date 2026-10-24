@@ -1,12 +1,12 @@
 # Standalone overlay for mounting the plugin WITHOUT the bundle manager.
-# Do not combine this with an installed dsh-douyin bundle: that would insert
+# Do not combine this with an installed dsh-douyin-whale bundle: that would insert
 # the same plugin id twice.
 #
 # Usage:
 #   dsh --profile desktop --patch <path-to-this-file>
 - insert:
-    - id: douyin
-      name: dsh-douyin
+    - id: douyin-whale
+      name: dsh-douyin-whale
       config:
         enabled: true
         writesEnabled: false

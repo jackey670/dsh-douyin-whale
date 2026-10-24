@@ -161,7 +161,7 @@ async def run(args) -> int:
     print(f"cookie 条数：{n_cookies}，localStorage origin：{n_origins}")
     print("\n下一步：")
     print("  1) 把该文件放到服务器（DOUYIN_DATA_DIR 之下）：")
-    print("     scp <本地文件> user@host:~/dsh-douyin/data/home/.dy/cookies/default.json")
+    print("     scp <本地文件> user@host:~/dsh-douyin-whale/data/home/.dy/cookies/default.json")
     print("  2) chmod 600 它，并确保不要提交进 git。")
     print("  3) 在服务器上调用 /im/status 或 douyin_status 验证。")
     return 0

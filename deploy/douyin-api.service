@@ -6,11 +6,11 @@
 #   sudo systemctl enable --now douyin-api
 #
 # 安装前请把 User= / WorkingDirectory= / ExecStart= 改成你自己的路径。
-# 环境变量（含 DOUYIN_IM_ALLOW_SEND）建议放 /etc/dsh-douyin.env，
+# 环境变量（含 DOUYIN_IM_ALLOW_SEND）建议放 /etc/dsh-douyin-whale.env，
 # 权限设为 600，并在里面只写非默认值。
 
 [Unit]
-Description=Douyin HTTP API (dsh-douyin)
+Description=Douyin HTTP API (dsh-douyin-whale)
 After=network-online.target
 Wants=network-online.target
 
@@ -18,16 +18,16 @@ Wants=network-online.target
 Type=simple
 # ↓↓↓ 改成实际运行用户与仓库路径 ↓↓↓
 User=CHANGE_ME
-WorkingDirectory=/opt/dsh-douyin
-EnvironmentFile=-/etc/dsh-douyin.env
-ExecStart=/opt/dsh-douyin/.venv/bin/python /opt/dsh-douyin/python/douyin_http.py
+WorkingDirectory=/opt/dsh-douyin-whale
+EnvironmentFile=-/etc/dsh-douyin-whale.env
+ExecStart=/opt/dsh-douyin-whale/.venv/bin/python /opt/dsh-douyin-whale/python/douyin_http.py
 Environment=PYTHONUTF8=1
 Environment=PYTHONIOENCODING=utf-8
 Environment=DOUYIN_HTTP_HOST=127.0.0.1
 Environment=DOUYIN_HTTP_PORT=7709
 
 # 安全默认值：私信真实发送保持关闭。
-# 真要开启，在 /etc/dsh-douyin.env 里写 DOUYIN_IM_ALLOW_SEND=1，
+# 真要开启，在 /etc/dsh-douyin-whale.env 里写 DOUYIN_IM_ALLOW_SEND=1，
 # 并清楚知道自己承担什么风险。
 Environment=DOUYIN_IM_ALLOW_SEND=0
 

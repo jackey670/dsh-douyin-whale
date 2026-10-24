@@ -1,8 +1,15 @@
 # Changelog
 
+## 1.2.0 — 2026-10-24
+
+- 项目与插件更名为 `dsh-douyin-whale`：包名、插件 id（`douyin-whale`）、
+  cordis 配置、部署路径和文档同步更新。
+- 项目定位为大肥鱼的抖音工具层；README 改为产品化说明。
+- MIT 许可和第三方版权声明继续保留在 `LICENSE` 中。
+
 ## 1.1.1 — 2026-10-24
 
-本地安全修改（fork 自 `JianHeShui/dsh-douyin`）：
+本地安全修改：
 
 - 删除 `python/douyin_bridge.py` 中的 `STEALTH_JS` 注入及其
   `context.add_init_script(...)` 调用。浏览器不再改写 `navigator.webdriver`、
@@ -14,7 +21,7 @@
 
 ## 1.1.0 — 2026-10-23
 
-Fork 后的第一个版本，基于上游 `dsh-douyin-toolkit` 1.0.0。
+本地版本的第一个版本。
 
 新增：
 
@@ -45,7 +52,7 @@ Fork 后的第一个版本，基于上游 `dsh-douyin-toolkit` 1.0.0。
 - **路径参数化**：所有服务器绝对路径改为环境变量或相对路径
   （`DOUYIN_DATA_DIR`、`DOUYIN_PYTHON`、`DOUYIN_BROWSER`、`DOUYIN_MEDIA_DIR`、
   `DOUYIN_COOKIE_FILE` 等）。
-- **包名**：`dsh-douyin-toolkit` → `dsh-douyin`（插件 id 仍为 `douyin`）。
+- **包名**：1.2.0 起统一为 `dsh-douyin-whale`，插件 id 为 `douyin-whale`。
 - 私信驱动与插件共用同一个 `data/` 目录，不再分开维护测试档。
 
 保持不变：
@@ -55,7 +62,7 @@ Fork 后的第一个版本，基于上游 `dsh-douyin-toolkit` 1.0.0。
 
 ## 1.0.0 — 2026-10-20
 
-上游初始版本（`SakuraMat0u/dsh-douyin-toolkit`）。
+初始版本。
 
 - 11 个 DSH 工具：hot、search、video、user、status、login start/status/submit、
   manual verify、guarded comment、publish interface。

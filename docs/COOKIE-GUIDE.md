@@ -41,7 +41,7 @@ python -m venv .venv
 
 ```text
 登录成功：localStorage
-已写入：/path/to/dsh-douyin/data/home/.dy/cookies/default.json
+已写入：/path/to/dsh-douyin-whale/data/home/.dy/cookies/default.json
 cookie 条数：23，localStorage origin：2
 ```
 
@@ -70,9 +70,9 @@ cookie 条数：23，localStorage origin：2
 scp data/home/.dy/cookies/default.json user@your-server:/tmp/douyin-cookie.json
 
 # 在服务器执行
-mkdir -p ~/dsh-douyin/data/home/.dy/cookies
-mv /tmp/douyin-cookie.json ~/dsh-douyin/data/home/.dy/cookies/default.json
-chmod 600 ~/dsh-douyin/data/home/.dy/cookies/default.json
+mkdir -p ~/dsh-douyin-whale/data/home/.dy/cookies
+mv /tmp/douyin-cookie.json ~/dsh-douyin-whale/data/home/.dy/cookies/default.json
+chmod 600 ~/dsh-douyin-whale/data/home/.dy/cookies/default.json
 ```
 
 如果数据目录不在默认位置，用环境变量指过去：

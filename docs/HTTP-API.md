@@ -44,14 +44,14 @@ curl -s http://127.0.0.1:7709/health | jq .
 ```json
 {
   "ok": true,
-  "python": "/opt/dsh-douyin/.venv/bin/python",
+  "python": "/opt/dsh-douyin-whale/.venv/bin/python",
   "dy": true,
   "ytdlp": true,
   "ffmpeg": true,
   "im": true,
   "im_send_allowed": false,
   "im_allow_to": [],
-  "data_dir": "/opt/dsh-douyin/data",
+  "data_dir": "/opt/dsh-douyin-whale/data",
   "cookie_present": true
 }
 ```
@@ -112,7 +112,7 @@ curl -s -X POST http://127.0.0.1:7709/download \
 {
   "ok": true,
   "aweme_id": "7xxxxxxxxxxxxxxxxxx",
-  "path": "/opt/dsh-douyin/data/media/downloads/7xxx.mp4",
+  "path": "/opt/dsh-douyin-whale/data/media/downloads/7xxx.mp4",
   "cached": false,
   "via": "yt-dlp",
   "desc": "视频文案",

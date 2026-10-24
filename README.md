@@ -1,12 +1,6 @@
-# dsh-douyin
+# dsh-douyin-whale
 
-把抖音接进 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：热榜、搜索、视频内容理解、私信/群聊，全部作为 DSH 的一等公民工具，另附一个可独立调用的本地 HTTP API。
-
-> 基于 [`SakuraMat0u/dsh-douyin-toolkit`](https://github.com/SakuraMat0u/dsh-douyin-toolkit)（MIT）改造：
-> 增加了 Linux/headless 适配、私信与群聊驱动、视频下载与抽帧、本地 HTTP API，并把所有服务器路径参数化。
->
-> 本仓库是 `JianHeShui/dsh-douyin` 的本地安全 fork：移除了浏览器 stealth 注入，
-> 并加了静态回归测试；详见 [`FORK-NOTICE.md`](./FORK-NOTICE.md) 和 CHANGELOG 1.1.1。
+大肥鱼的抖音工具层：把热榜、搜索、视频内容理解、私信/群聊接入 DSH，另附一个可独立调用的本地 HTTP API。
 
 <p>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
@@ -19,12 +13,11 @@
 
 ## English summary
 
-A Douyin toolkit for DeepSeek Harness (DSH) and any HTTP client. It reads the hot
-list, searches videos, downloads videos and extracts frames for vision models,
-and drives the web DM/group chat through Playwright — with dry-run **on by
-default** and three independent gates before anything is actually sent. Based on
-`SakuraMat0u/dsh-douyin-toolkit` (MIT); this fork adds Linux/headless support, an
-IM driver, media download, and a local HTTP API.
+A Douyin toolkit for Dafeiyu (大肥鱼) and DeepSeek Harness (DSH), also usable
+from any HTTP client. It reads the hot list, searches videos, downloads videos
+and extracts frames for vision models, and drives web DM/group chat through
+Playwright — with dry-run **on by default** and three independent gates before
+anything is actually sent.
 
 ---
 
@@ -32,7 +25,7 @@ IM driver, media download, and a local HTTP API.
 
 - [这是什么](#这是什么)
 - [特性](#特性)
-- [和上游的关系](#和上游的关系)
+- [项目定位](#项目定位)
 - [架构](#架构)
 - [环境要求](#环境要求)
 - [安装](#安装)
@@ -88,23 +81,15 @@ server），外加一组可以单独调用的 Python 脚本。
 - **账号指纹**：记录首个登录账号的不可逆指纹，换号后写操作直接拒绝。
 - **缺失即 `null`**：抖音数据稀疏，缺字段返回 `null`，不填 0、不猜。
 
-## 和上游的关系
+## 项目定位
 
-本仓库是 [`SakuraMat0u/dsh-douyin-toolkit`](https://github.com/SakuraMat0u/dsh-douyin-toolkit)
-的改造版。上游是一个**只跑 Windows + Edge** 的只读 + 单条评论插件，本仓库在此
-基础上加了：
+`dsh-douyin-whale` 是大肥鱼在抖音侧的工具层：先把“看什么、看到了什么”跑通，再逐步加互动。
 
-| 变更 | 说明 |
-|---|---|
-| Linux / headless 适配 | 浏览器发现扩展到 Chromium/Chrome/Playwright 自带内核；无 X server 时自动降级 headless；进程清理加 POSIX 分支 |
-| 私信 / 群聊 | 新增 `python/douyin_im.py`：Playwright 驱动网页版，dry-run 默认 + 双闸 + 可选白名单 + 串行锁 |
-| 视频下载 / 抽帧 | 新增 `python/douyin_http.py`：移动端分享页解析无水印直链 + yt-dlp generic + ffmpeg 抽帧 |
-| HTTP API | 把 dy-cli 与私信驱动包装成本地 JSON 服务（端口 7709） |
-| 路径参数化 | 服务器绝对路径全部改为环境变量 / 相对路径 |
-| 文档 | 新增 Linux 适配、Cookie 导出、HTTP API、安全说明 |
-
-上游的核心设计（dy-cli 只读通道、错误码、限频、脱敏、登录状态机、账号指纹）
-都保留了，没有重写。
+- **只读优先**：热榜、搜索、视频详情、评论、下载、抽帧都不产生公开写操作。
+- **写操作默认关闭**：私信/群聊必须显式打开三道闸；评论默认 dry-run。
+- **真实浏览器**：登录和评论使用本机 Edge/Chrome + 独立 profile，不使用指纹注入，不绕过验证码。
+- **本地优先**：cookie、profile、下载物都在 `data/`，HTTP 服务只监听 `127.0.0.1`。
+- **可接 ZCode**：HTTP API 可以被任意调度器调用，和 b 站那套 `scheduler + 日记` 共用同一套思路。
 
 ## 架构
 
@@ -141,8 +126,8 @@ Chromium。
 ### 1. 克隆并建虚拟环境
 
 ```bash
-git clone https://github.com/JianHeShui/dsh-douyin.git
-cd dsh-douyin
+git clone https://github.com/jackey670/dsh-douyin-whale.git
+cd dsh-douyin-whale
 
 python3 -m venv .venv
 # Linux / macOS
@@ -207,8 +192,8 @@ curl -s http://127.0.0.1:7709/health | jq .
 # 扫码登录成功后，自动写出 data/home/.dy/cookies/default.json
 
 # 送到服务器
-scp data/home/.dy/cookies/default.json user@server:~/dsh-douyin/data/home/.dy/cookies/default.json
-ssh user@server 'chmod 600 ~/dsh-douyin/data/home/.dy/cookies/default.json'
+scp data/home/.dy/cookies/default.json user@server:~/dsh-douyin-whale/data/home/.dy/cookies/default.json
+ssh user@server 'chmod 600 ~/dsh-douyin-whale/data/home/.dy/cookies/default.json'
 ```
 
 完整流程、可选参数、过期处理见 [`docs/COOKIE-GUIDE.md`](docs/COOKIE-GUIDE.md)。
@@ -282,13 +267,13 @@ DOUYIN_IM_ALLOW_SEND=1 python python/douyin_im.py send --to=某某 --text=在吗
 覆盖行：
 
 ```yaml
-- id: douyin
-  name: dsh-douyin
+- id: douyin-whale
+  name: dsh-douyin-whale
   config:
     writesEnabled: false
     maxSearchPages: 2
-    pythonPath: /opt/dsh-douyin/.venv/bin/python
-    dataDir: /opt/dsh-douyin/data
+    pythonPath: /opt/dsh-douyin-whale/.venv/bin/python
+    dataDir: /opt/dsh-douyin-whale/data
     edgePath: /usr/bin/chromium
 ```
 
@@ -415,9 +400,9 @@ cookie 没导出或已过期。按 [`docs/COOKIE-GUIDE.md`](docs/COOKIE-GUIDE.md
 ## 目录结构
 
 ```text
-dsh-douyin/
+dsh-douyin-whale/
 ├── README.md                    # 本文件
-├── LICENSE                      # MIT（含上游版权声明）
+├── LICENSE                      # MIT（含第三方版权声明）
 ├── CHANGELOG.md
 ├── .env.example                 # 所有环境变量模板
 ├── .gitignore                   # 排除 cookie / venv / data / 缓存
@@ -481,18 +466,11 @@ python tests/test_fixture.py
 改选择器：抖音前端改版后，跑 `python tools/probe_im.py` 采集新的 class /
 placeholder，对照 `python/douyin_im.py` 顶部的常量调整。
 
-## 许可与致谢
+## 许可
 
-MIT，见 [LICENSE](LICENSE)。上游
-[`SakuraMat0u/dsh-douyin-toolkit`](https://github.com/SakuraMat0u/dsh-douyin-toolkit)
-的版权声明保留在 LICENSE 中。
+MIT，见 [LICENSE](LICENSE)。仓库中包含的第三方 MIT 代码版权声明保留在
+LICENSE 中。
 
-这个项目站在很多人的肩膀上：
-
-- [`Youhai020616/douyin`](https://github.com/Youhai020616/douyin)（`dy-cli`）——
-  热榜、搜索、用户资料的逆向接口与 JSON 信封
-- [`Kuhakucai/douyin-mcp`](https://github.com/Kuhakucai/douyin-mcp) —— 登录态判定、
-  专用 profile、单 worker 设计参考
 - [`WJZ-P/douyin-upload-mcp-skill`](https://github.com/WJZ-P/douyin-upload-mcp-skill)
   —— 多阶段登录状态机参考
 - [`NanmiCoder/MediaCrawler`](https://github.com/NanmiCoder/MediaCrawler) ——
