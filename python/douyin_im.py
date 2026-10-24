@@ -775,14 +775,31 @@ async def trigger_send(page) -> str:
 
 
 async def confirm_sent(page, text: str, timeout_ms: int = 15_000) -> dict:
-    """等待自己发出的消息气泡出现，并排除失败标记。返回确认信息。"""
+    """确认消息真正发出去：检查输入框已清空 + 自己的气泡出现在聊天区。"""
     deadline = time.monotonic() + timeout_ms / 1000
+    norm_text = re.sub(r"[\s\u200B\u200C\u200D\uFEFF]+", " ", text).strip()[:60]
     while time.monotonic() < deadline:
         for f in FAILURE_MARKERS:
             if await page.locator(f).first.count():
                 raise IMError("SEND_FAILED", "页面出现「发送失败/重试」，消息未送达")
+
+        # 条件 1：输入框已经清空（如果还有文字，说明没发出去）
+        composer_empty = True
+        for sel in MESSAGE_INPUTS:
+            loc = page.locator(sel).first
+            try:
+                if await loc.count():
+                    remaining = await loc.inner_text(timeout=2000)
+                    if remaining.strip():
+                        composer_empty = False
+                    break
+            except Exception:
+                continue
+
+        # 条件 2：聊天区出现了自己发的气泡
+        bubble_found = False
         try:
-            found = await page.evaluate(
+            bubble_found = await page.evaluate(
                 """([txt]) => {
                     const norm = s => (s || '').replace(/[\\s\\u200B\\u200C\\u200D\\uFEFF]+/g, ' ').trim();
                     const bubbles = [...document.querySelectorAll(
@@ -792,12 +809,24 @@ async def confirm_sent(page, text: str, timeout_ms: int = 15_000) -> dict:
                 }""",
                 [text],
             )
-            if found:
-                return {"bubble_found": True, "confirmed_after_ms": timeout_ms - int((deadline - time.monotonic()) * 1000)}
         except Exception:
             pass
+
+        # 两个条件都满足才算真的发出去
+        if composer_empty and bubble_found:
+            return {
+                "bubble_found": True,
+                "composer_cleared": True,
+                "confirmed_after_ms": timeout_ms - int((deadline - time.monotonic()) * 1000),
+            }
+
         await page.wait_for_timeout(400)
-    raise IMError("SEND_UNCONFIRMED", "已触发发送，但未确认到自己的消息气泡；请到页面上人工核实，勿自动重试")
+
+    raise IMError(
+        "SEND_UNCONFIRMED",
+        f"已触发发送但未确认（输入框{'已清' if composer_empty else '未清'}，气泡{'出现' if bubble_found else '未出现'}）；"
+        "请人工核实，勿自动重试",
+    )
 
 
 async def screenshot(page, name: str) -> str:
