@@ -177,9 +177,30 @@ function wakeAgent(text, tag = 'wake', { fresh = true } = {}) {
       waking = false
 
       wakingSince = 0
-      const parsed = (() => {
-        try { return JSON.parse(out.trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}') } catch { return {} }
-      })()
+      // ZCode CLI 输出多行 JSON；扫描全部平衡 {…} 找带 sessionId 的那个
+      const objects = []
+      {
+        let depth = 0, start = -1, inStr = false, esc = false
+        for (let i = 0; i < out.length; i += 1) {
+          const ch = out[i]
+          if (inStr) {
+            if (esc) esc = false
+            else if (ch === '\\') esc = true
+            else if (ch === '"') inStr = false
+            continue
+          }
+          if (ch === '"') { inStr = true; continue }
+          if (ch === '{') { if (depth === 0) start = i; depth += 1; continue }
+          if (ch === '}') {
+            depth -= 1
+            if (depth === 0 && start >= 0) {
+              try { objects.push(JSON.parse(out.slice(start, i + 1))) } catch {}
+              start = -1
+            }
+          }
+        }
+      }
+      const parsed = [...objects].reverse().find((o) => o && o.sessionId && (o.response !== undefined || o.usage)) || null
       const sid = parsed?.sessionId || (out.match(/"sessionId"\s*:\s*"([^"]+)"/) || [])[1] || null
       const response = String(parsed?.response ?? '')
       const ok = code === 0 && !!sid && !timedOut
