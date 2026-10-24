@@ -1,0 +1,13 @@
+{
+  "persona": {
+    "name": "大肥鱼",
+    "ownerTitle": "主人"
+  },
+  "owner": {
+    "nickname": "你的抖音昵称"
+  },
+  "preferences": {
+    "like": ["宠物", "AI", "日常"],
+    "dislike": []
+  }
+}
