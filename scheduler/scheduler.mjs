@@ -102,7 +102,9 @@ function writeState(st) { writeJson(STATE_FILE, st) }
 
 // ── ZCode 唤醒 ──────────────────────────────────────────────────────────────
 const WAKE_BACKOFF_MS = 5 * 60_000
+const WAKE_STUCK_MS = 15 * 60_000
 let waking = false
+let wakingSince = 0
 let lastWakeFailure = 0
 
 function cliSpec() {
@@ -113,11 +115,18 @@ function cliSpec() {
 }
 
 function wakeAgent(text, tag = 'wake', { fresh = true } = {}) {
+  // 防卡死：如果 waking 已经 true 超过 15 分钟，强制重置
+  if (waking && wakingSince > 0 && Date.now() - wakingSince > WAKE_STUCK_MS) {
+    log(`[wake] waking 标志卡死 ${Math.round((Date.now() - wakingSince) / 60000)} 分钟，强制重置`)
+    waking = false
+    wakingSince = 0
+  }
   if (waking) return Promise.resolve({ ok: false, skipped: 'busy' })
   if (Date.now() - lastWakeFailure < WAKE_BACKOFF_MS) {
     return Promise.resolve({ ok: false, skipped: 'backoff' })
   }
   waking = true
+  wakingSince = Date.now()
   const { cmd, base } = cliSpec()
   const args = [...base, '-p', text, '--cwd', AGENT_DIR, '--json', '--no-color', '--mode', 'yolo']
 
@@ -138,6 +147,8 @@ function wakeAgent(text, tag = 'wake', { fresh = true } = {}) {
       })
     } catch (e) {
       waking = false
+
+      wakingSince = 0
       lastWakeFailure = Date.now()
       log(`[wake:${tag}] 启动失败：${e.message}`)
       resolve({ ok: false, error: e.message })
@@ -164,6 +175,8 @@ function wakeAgent(text, tag = 'wake', { fresh = true } = {}) {
     const finish = (code) => {
       clearTimeout(timer)
       waking = false
+
+      wakingSince = 0
       const parsed = (() => {
         try { return JSON.parse(out.trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}') } catch { return {} }
       })()
@@ -184,6 +197,8 @@ function wakeAgent(text, tag = 'wake', { fresh = true } = {}) {
     child.on('error', (e) => {
       clearTimeout(timer)
       waking = false
+
+      wakingSince = 0
       lastWakeFailure = Date.now()
       log(`[wake:${tag}] spawn 失败：${e.message}`)
       resolve({ ok: false, error: e.message })
@@ -296,6 +311,7 @@ async function tick() {
   const lastAt = Number(st.lastWatchAt ?? 0)
   if (lastAt > 0 && nowMin() - lastAt < interval) return
 
+  log(`[tick] 触发观看轮：今日 ${st.watches}/${dailyMax} · 距上次 ${lastAt > 0 ? nowMin() - lastAt : '∞'} 分钟`)
   watchingTick = true
   try {
     const keywords = Array.isArray(cfg.preferences?.like) ? cfg.preferences.like : ['宠物']
@@ -416,3 +432,11 @@ if (has('--help') || has('-h')) {
 } else {
   startDaemon()
 }
+
+// 防止未捕获异常静默杀死调度器
+process.on('uncaughtException', (err) => {
+  log(`[FATAL] uncaughtException: ${err.message}\n${err.stack?.slice(0, 500)}`)
+})
+process.on('unhandledRejection', (reason) => {
+  log(`[FATAL] unhandledRejection: ${reason}`)
+})

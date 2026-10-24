@@ -265,7 +265,7 @@ async function run() {
       const args = [imScript, 'send', '--to', to, '--text', text];
       if (reallySend) args.push('--send');
 
-      const result = spawnSync(py, args, { env, timeout: 180_000, encoding: 'utf8' });
+      const result = spawnSync(py, args, { env, timeout: 180_000, encoding: 'utf8', windowsHide: true });
       let payload;
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
@@ -289,7 +289,7 @@ async function run() {
         DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
       };
       const result = spawnSync(py, [imScript, 'read', '--from', from, '--limit', String(limit)],
-        { env, timeout: 180_000, encoding: 'utf8' });
+        { env, timeout: 180_000, encoding: 'utf8', windowsHide: true });
       let payload;
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }

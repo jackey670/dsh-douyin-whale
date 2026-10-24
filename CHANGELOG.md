@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.3 — 2026-10-24
+
+- 修复：`douyin.mjs` `spawnSync` 加 `windowsHide: true`，不再弹出空白 CMD 窗口。
+- 修复：调度器 `waking` 标志卡死检测（15 分钟超时强制重置）。
+- 修复：全局 `uncaughtException` / `unhandledRejection` 处理，防止调度器静默崩溃。
+- 修复：`tick()` 每次触发时写日志，方便排查停更。
+
 ## 1.3.2 — 2026-10-24
 
 - HTTP API 私信默认 headless（无窗口弹出）：`DOUYIN_HEADLESS=1`。
