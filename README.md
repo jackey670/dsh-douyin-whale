@@ -259,6 +259,7 @@ node douyin.mjs help
 node douyin.mjs health
 node douyin.mjs search "猫" --count 5
 node douyin.mjs frames <aweme_id|分享链接> --n 8
+node douyin.mjs watch "猫" --count 5 --n 6   # 选一条没看过的视频并抽帧
 node douyin.mjs trending
 node douyin.mjs status
 ```

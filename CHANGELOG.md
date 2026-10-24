@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 — 2026-10-24
+
+- `douyin.mjs` 新增 `watch` 命令：按关键词选一条没看过的视频并抽帧；
+  已看记录写入 `data/whale/douyin/seen.json`，供大肥鱼不重复观看。
+
 ## 1.3.0 — 2026-10-24
 
 - 新增 Node 适配层 `douyin.mjs` 和 `lib/douyin_http_client.mjs`：

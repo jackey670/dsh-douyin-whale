@@ -20,12 +20,15 @@
  *   node douyin.mjs download <aweme_id|分享链接>
  *   node douyin.mjs frames <aweme_id|分享链接> --n 8
  *   node douyin.mjs profile <sec_uid|主页链接>
+ *   node douyin.mjs watch <关键词> [--count N] [--n N] [--seen FILE] [--out FILE]
  *
  * 输出
  * ----
  *   始终是一段 JSON；失败时 `{ ok: false, error }` 并返回非零退出码。
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
 
 import {
@@ -38,6 +41,7 @@ import {
   userProfile,
   videoDetail,
   videoFrames,
+  DATA_DIR,
 } from './lib/douyin_http_client.mjs';
 
 const HELP = `douyin.mjs — 大肥鱼抖音适配层
@@ -52,12 +56,15 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   download <id|链接>                         下载无水印视频
   frames <id|链接> [--n N]                   下载并抽帧
   profile <sec_uid|主页链接>                  用户主页
+  watch <关键词> [--count N] [--n N]         选一条没看过的视频并抽帧
   help                                      显示本说明
 
 选项：
   --count N        搜索结果条数（1–20）
   --sort s         综合 / 最多点赞 / 最新发布
   --n N            抽帧数量（4–12）
+  --seen FILE      已看过的 aweme_id 列表（默认 data/whale/douyin/seen.json）
+  --out FILE       把本次 watch 结果写到指定 JSON 文件
   --no-start       不自动启动本地 HTTP API
   --base-url URL   指定 HTTP API 地址
 `;
@@ -97,6 +104,20 @@ function extractId(input) {
   if (match) return match[1];
   const bare = text.match(/(\d{15,25})/);
   return bare ? bare[1] : null;
+}
+
+function readSeenIds(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSeenIds(file, ids) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(ids, null, 2) + '\n', 'utf8');
 }
 
 async function run() {
@@ -168,6 +189,42 @@ async function run() {
       if (!user) return fail('profile 需要一个 sec_uid 或主页链接');
       const result = await userProfile(user, { base, start });
       ok({ ok: true, ...result });
+      return;
+    }
+    case 'watch': {
+      const keyword = args[0];
+      if (!keyword) return fail('watch 需要一个关键词');
+      const count = Number.isFinite(options.count) ? Math.max(1, Math.min(20, options.count)) : 5;
+      const n = Number.isFinite(options.n) ? Math.max(4, Math.min(12, options.n)) : 6;
+      const seenPath = options.seen
+        ? path.resolve(String(options.seen))
+        : path.join(DATA_DIR, 'whale', 'douyin', 'seen.json');
+
+      const result = await searchVideos(keyword, { count, base, start });
+      const seen = readSeenIds(seenPath);
+      const video = result.videos.find((v) => v.aweme_id && !seen.includes(v.aweme_id))
+        ?? result.videos[0];
+      if (!video?.aweme_id) return fail('watch 没有拿到可用视频');
+
+      const frames = await videoFrames(video.aweme_id, { n, base, start });
+      const seenIds = Array.from(new Set([...seen, video.aweme_id])).slice(-200);
+      writeSeenIds(seenPath, seenIds);
+
+      const watchResult = {
+        ok: true,
+        keyword,
+        video,
+        frames,
+        seenPath,
+        seenCount: seenIds.length,
+      };
+      if (options.out) {
+        const outPath = path.resolve(String(options.out));
+        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+        fs.writeFileSync(outPath, JSON.stringify(watchResult, null, 2) + '\n', 'utf8');
+        watchResult.outPath = outPath;
+      }
+      ok(watchResult);
       return;
     }
     default:
