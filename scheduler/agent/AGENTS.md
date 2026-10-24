@@ -44,18 +44,25 @@ node "$D" status                          # 登录状态
 
 ## 看视频（默认流程）
 
-1. **体检**
+1. **先看主人有没有推荐视频**
+   ```bash
+   node "$D" read-dm --from "漱月鸣筝" --limit 20
+   ```
+   如果输出 `video_urls[]` 不为空 → 取第一个链接里的 aweme_id，跳到步骤 3a。
+   如果为空 → 走步骤 3b（关键词搜索）。
+
+2. **体检**
    ```bash
    node "$D" health
    ```
    如果 `ok:false`：报告用户，结束。
 
-2. **读两本日记**
-   - `C:/Users/jackey/.dsh/whale-diary.md`
-   - `C:/Users/jackey/.dsh/whale-diary-private.md`
-   记住上次看到哪、喜欢什么、偏好校准。
+3a. **看主人推荐的视频**
+   ```bash
+   node "$D" frames <aweme_id> --n 6
+   ```
 
-3. **看一条视频**
+3b. **自选视频（关键词搜索）**
    ```bash
    node "$D" watch "关键词" --count 5 --n 6
    ```
@@ -67,11 +74,11 @@ node "$D" status                          # 登录状态
    - 私人：`whale-diary-private.md` —— 偏好校准 / 下次想看什么
    不要覆盖整本，追加到当天小节。
 
-5. **私信主人一句感想**（≤80 字，像聊天，不是汇报）
+5. **私信主人一句感想 + 视频链接**（≤120 字）
    ```bash
-   node "$D" send --to "漱月鸣筝" --text "…" --send
+   node "$D" send --to "漱月鸣筝" --text "感想… https://www.douyin.com/video/<aweme_id>" --send
    ```
-   昵称从配置 `owner.nickname` 读。**只发一条**；发完就结束这一轮。
+   **必须带视频链接**，让主人能点进去看。只发一条；发完就结束这一轮。
    如果 `share.enabled=false`，跳过这步，只写日记。
 
 5. **推给我：最想分享的一句**

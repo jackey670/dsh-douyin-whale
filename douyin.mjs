@@ -59,6 +59,7 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   profile <sec_uid|主页链接>                  用户主页
   watch <关键词> [--count N] [--n N]         选一条没看过的视频并抽帧
   send --to <昵称> --text <文字> [--send]     私信（默认 dry-run）
+  read-dm --from <昵称> [--limit N]          读私信（提取视频链接）
   help                                      显示本说明
 
 选项：
@@ -265,6 +266,30 @@ async function run() {
       if (reallySend) args.push('--send');
 
       const result = spawnSync(py, args, { env, timeout: 180_000, encoding: 'utf8' });
+      let payload;
+      try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
+      catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
+      ok(payload);
+      if (!payload.ok) process.exitCode = 1;
+      return;
+    }
+    case 'read-dm': {
+      const from = options.from;
+      if (!from) return fail('read-dm 需要 --from <昵称>');
+      const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(50, options.limit)) : 20;
+
+      const { spawnSync } = await import('node:child_process');
+      const py = findImPython();
+      const imScript = path.join(ROOT, 'python', 'douyin_im.py');
+      const env = {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        DOUYIN_DATA_DIR: DATA_DIR,
+        DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
+      };
+      const result = spawnSync(py, [imScript, 'read', '--from', from, '--limit', String(limit)],
+        { env, timeout: 180_000, encoding: 'utf8' });
       let payload;
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }

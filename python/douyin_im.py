@@ -1005,6 +1005,99 @@ async def cmd_group_send(cookie_file: str | None, group: str, text: str, do_send
 
 
 # --------------------------------------------------------------------------
+# 读私信（提取主人发来的视频链接 / 指令）
+# --------------------------------------------------------------------------
+
+# 消息气泡可能的 class 模式
+MSG_BUBBLES = (
+    '[class*="messageMsgItem"]',
+    '[class*="messageItem"]',
+    '[class*="msgItem"]',
+    '[class*="MessageItem"]',
+    '[class*="message-item"]',
+)
+
+# 聊天区容器
+CHAT_AREA = (
+    '[class*="messageList"]',
+    '[class*="MessageList"]',
+    '[class*="chatMessage"]',
+    '[class*="ChatMessage"]',
+    '[class*="message-list"]',
+)
+
+# 非消息内容（时间戳 / 系统提示）
+NOISE_PATTERNS = (
+    "你们已互相关注",
+    "可以开始聊天",
+    "打个招呼吧",
+)
+
+VIDEO_URL_RE = re.compile(
+    r'https?://(?:www\.douyin\.com/video/|v\.douyin\.com/|www\.iesdouyin\.com/share/video/)\S+'
+)
+
+
+async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dict:
+    """打开与 target 的会话，读最近 limit 条消息，提取视频链接。"""
+    async with open_browser(cookie_file) as page:
+        await ensure_chat_page(page)
+        title = await open_conversation(page, target)
+        await page.wait_for_timeout(2000)
+
+        # 拿聊天区域的完整文本（最可靠的通用方式）
+        chat_text = ""
+        for area_sel in CHAT_AREA:
+            loc = page.locator(area_sel).first
+            try:
+                if await loc.count():
+                    chat_text = await loc.inner_text(timeout=5000)
+                    break
+            except Exception:
+                continue
+
+        # 兜底：如果选择器没命中，直接拿 body 文本
+        if not chat_text:
+            chat_text = await page.inner_text("body")
+
+        # 按行拆分，去掉空行和噪音
+        lines = [l.strip() for l in chat_text.split("\n") if l.strip()]
+        messages = []
+        for line in lines:
+            if any(noise in line for noise in NOISE_PATTERNS):
+                continue
+            # 跳过纯时间戳行（如 "刚刚" "54分钟前" "21:46"）
+            if re.match(r'^[\d:分钟前小时天月年刚\s]+$', line):
+                continue
+            # 跳过搜索框文本
+            if line in ("搜索", "取消"):
+                continue
+            if len(line) < 2:
+                continue
+            messages.append(line)
+
+        # 只取最后 limit 条
+        messages = messages[-limit:]
+
+        # 提取视频链接
+        video_urls = []
+        full_text = "\n".join(messages)
+        for match in VIDEO_URL_RE.finditer(full_text):
+            url = match.group(0).rstrip(".,;:)】」")
+            if url not in video_urls:
+                video_urls.append(url)
+
+        return {
+            "target": target,
+            "resolved_title": title,
+            "message_count": len(messages),
+            "messages": messages,
+            "video_urls": video_urls,
+        }
+    return {}
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 def kill_stale_browsers() -> int:
@@ -1060,6 +1153,10 @@ def main(argv=None) -> int:
     p_gs.add_argument("--send", action="store_true")
     p_gs.add_argument("--screenshot", action="store_true", default=True)
 
+    p_read = sub.add_parser("read", help="读某个会话的最近消息")
+    p_read.add_argument("--from", dest="from_nick", required=True, help="对方昵称")
+    p_read.add_argument("--limit", type=int, default=20)
+
     args = ap.parse_args(argv)
 
     do_send = bool(getattr(args, "send", False))
@@ -1105,6 +1202,8 @@ def main(argv=None) -> int:
                 return await cmd_send(cookie_file, args.to, args.text, do_send, True)
             if args.cmd == "group-send":
                 return await cmd_group_send(cookie_file, args.group, args.text, do_send, True)
+            if args.cmd == "read":
+                return await cmd_read(cookie_file, args.from_nick, args.limit)
             raise IMError("BAD_CMD", "unknown command")
 
         data = asyncio.run(asyncio.wait_for(run(), timeout=150))
