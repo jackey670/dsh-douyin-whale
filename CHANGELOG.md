@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0 — 2026-10-24
+
+- 新增 Node 适配层 `douyin.mjs` 和 `lib/douyin_http_client.mjs`：
+  - 给 agent / 调度器一条稳定的 JSON 命令；
+  - 支持 `health`、`start`、`status`、`trending`、`search`、`detail`、
+    `download`、`frames`、`profile`；
+  - 默认自动拉起本地 HTTP API，可用 `--no-start` 关闭。
+- README 新增「Node 适配层」用法；`npm run douyin` 直接调用。
+
 ## 1.2.0 — 2026-10-24
 
 - 项目与插件更名为 `dsh-douyin-whale`：包名、插件 id（`douyin-whale`）、

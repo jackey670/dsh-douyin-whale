@@ -31,6 +31,7 @@ anything is actually sent.
 - [安装](#安装)
 - [登录](#登录)
 - [快速开始](#快速开始)
+- [Node 适配层](#node-适配层)
 - [配置](#配置)
 - [私信安全模型](#私信安全模型)
 - [风险与合规](#风险与合规)
@@ -248,6 +249,21 @@ curl -s -X POST http://127.0.0.1:7709/im/send \
 ```
 
 完整接口、错误码、dry-run 语义见 [`docs/HTTP-API.md`](docs/HTTP-API.md)。
+
+### Node 适配层
+
+给 agent / 调度器用的薄封装，默认会自动拉起本地 HTTP API：
+
+```bash
+node douyin.mjs help
+node douyin.mjs health
+node douyin.mjs search "猫" --count 5
+node douyin.mjs frames <aweme_id|分享链接> --n 8
+node douyin.mjs trending
+node douyin.mjs status
+```
+
+如果不想让它自己起服务，加 `--no-start`；要指定地址，加 `--base-url`。
 
 ### 命令行（不经过 DSH / HTTP）
 
