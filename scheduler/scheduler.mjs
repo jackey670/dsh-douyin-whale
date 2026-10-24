@@ -352,9 +352,27 @@ async function tick() {
     }), 'watch', { fresh: true })
 
     if (!r.ok) {
-      // 回滚计数，下次重试
       writeState({ ...st, date: today() })
       log(`[tick] watch 失败，回滚计数`)
+      return
+    }
+
+    // 检测 cookie 过期 / 登录失效
+    const respText = String(r.response ?? '')
+    const loginFailPatterns = ['请先登录', '登录已失效', '需要登录', '登录态被拒', 'cookie 过期', 'cookie过期']
+    const isLoginFail = loginFailPatterns.some(p => respText.includes(p))
+    if (isLoginFail) {
+      const st2 = readState()
+      const fails = Number(st2.loginFails ?? 0) + 1
+      writeState({ ...st2, loginFails: fails })
+      log(`[tick] ⚠️ 检测到登录失效（连续 ${fails} 次）：${respText.slice(0, 200)}`)
+      if (fails >= 2) {
+        log(`[tick] 🔴 抖音 cookie 可能已过期，连续 ${fails} 轮登录失败。请重新导出 cookie！`)
+      }
+    } else {
+      // 成功 → 清零失败计数
+      const st2 = readState()
+      if (Number(st2.loginFails ?? 0) > 0) writeState({ ...st2, loginFails: 0 })
     }
   } finally {
     watchingTick = false
