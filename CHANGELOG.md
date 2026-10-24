@@ -1,5 +1,16 @@
 # Changelog
 
+## 待修（2026-10-25）
+
+主人发了 3 条视频 → 23 次 API / 27k token → 只回了 1 条不相关的话。问题：
+
+1. **`read-dm` 读不到视频卡片里的 aweme_id**：主人发的是视频卡片（缩略图），
+   `cmd_read` 用 `innerText` 读不到卡片嵌入的链接。需要 Playwright 提取卡片 DOM 的 href/data 属性。
+2. **`seen.json` 误杀主人推荐**：早期关键词搜索写了 9 个 ID 到 seen。
+   主人发的视频如果同 ID → 被跳过。主人推荐应优先于 seen。
+3. **agent 回复不相关**：没有真正看到主人发的视频帧，自行选了别的凑。
+4. **`confirm_sent` 仍可能假阳性**：报 `SEND_UNCONFIRMED` 但消息已送达。
+
 ## 1.3.3 — 2026-10-24
 
 - 修复：`douyin.mjs` `spawnSync` 加 `windowsHide: true`，不再弹出空白 CMD 窗口。
