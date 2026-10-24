@@ -156,6 +156,9 @@ curl -s -X POST http://127.0.0.1:7709/frames \
 
 ## 私信 / 群聊
 
+> 所有私信操作默认 **headless**（无窗口弹出），由 HTTP API 的 `DOUYIN_HEADLESS=1` 控制。
+> 手动调试时在环境里设 `DOUYIN_HEADLESS=0` 可以看到浏览器操作过程。
+
 ### `POST /im/status`
 
 检查登录态、风控页、私信页搜索框。会真的启动一次浏览器，约 10–30 秒。

@@ -592,6 +592,8 @@ IM_ENV = {
     "PYTHONUTF8": "1",
     "PYTHONIOENCODING": "utf-8",
     "DOUYIN_DATA_DIR": IM_DATA_DIR,
+    # HTTP 服务默认 headless（无窗口弹出）；用户可用 DOUYIN_HEADLESS=0 覆盖
+    "DOUYIN_HEADLESS": os.environ.get("DOUYIN_HEADLESS", "1"),
 }
 _im_lock = threading.Lock()
 

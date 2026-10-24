@@ -51,6 +51,7 @@ server），外加一组可以单独调用的 Python 脚本。
 2. **看得懂**：视频下载 → ffmpeg 抽帧 → 交给支持视觉的模型（比如 DeepSeek
    flash 的原生视觉），不需要自己实现视频理解。
 3. **说得上话**：通过 Playwright 驱动抖音网页版，私信单个用户、给群聊发消息。
+   HTTP API 默认 headless（无窗口弹出）；手动调试设 `DOUYIN_HEADLESS=0` 可看操作过程。
 4. **接得住**：所有能力都能通过本地 HTTP API（默认 `127.0.0.1:7709`）暴露，
    任何语言写的上层程序都能调。
 
@@ -242,10 +243,15 @@ curl -s -X POST http://127.0.0.1:7709/frames \
   -H 'Content-Type: application/json' \
   -d '{"aweme_id":"7xxxxxxxxxxxxxx","n":8}' | jq .
 
-# 私信（默认 dry-run：只填框 + 截图 + 清空）
+# 私信（默认 dry-run：只填框 + 截图 + 清空；HTTP API 默认 headless 无窗口）
 curl -s -X POST http://127.0.0.1:7709/im/send \
   -H 'Content-Type: application/json' \
   -d '{"to":"某某","text":"在吗"}' | jq .
+
+# 真实发送（需要 DOUYIN_IM_ALLOW_SEND=1 环境变量 + send=true）
+curl -s -X POST http://127.0.0.1:7709/im/send \
+  -H 'Content-Type: application/json' \
+  -d '{"to":"某某","text":"在吗","send":true}' | jq .
 ```
 
 完整接口、错误码、dry-run 语义见 [`docs/HTTP-API.md`](docs/HTTP-API.md)。
@@ -318,7 +324,7 @@ DOUYIN_IM_ALLOW_SEND=1 python python/douyin_im.py send --to=某某 --text=在吗
 | `DOUYIN_DATA_DIR` | `<repo>/data` | 数据目录（cookie、profile、日志） |
 | `DOUYIN_PYTHON` | 当前解释器 | 装了 dy-cli 的解释器 |
 | `DOUYIN_BROWSER` | 自动发现 | 浏览器可执行文件 |
-| `DOUYIN_HEADLESS` | 私信驱动 `1` | `0` 开窗口调试 |
+| `DOUYIN_HEADLESS` | HTTP API `1`，手动 `0` | `1` 无窗口弹出；`0` 开窗口调试 |
 | `DOUYIN_COOKIE_FILE` | `<DATA>/home/.dy/cookies/default.json` | storage_state |
 | `DOUYIN_MEDIA_DIR` | `<DATA>/media` | 成片 / 帧缓存 |
 | `DOUYIN_HTTP_HOST` / `DOUYIN_HTTP_PORT` | `127.0.0.1` / `7709` | 监听地址 |

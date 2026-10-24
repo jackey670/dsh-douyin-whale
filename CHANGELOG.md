@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2 — 2026-10-24
+
+- HTTP API 私信默认 headless（无窗口弹出）：`DOUYIN_HEADLESS=1`。
+- README / docs 同步更新。
+
 ## 1.3.1 — 2026-10-24
 
 - `douyin.mjs` 新增 `watch` 命令：按关键词选一条没看过的视频并抽帧；
