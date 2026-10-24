@@ -4,10 +4,20 @@
     "ownerTitle": "主人"
   },
   "owner": {
-    "nickname": "你的抖音昵称"
+    "nickname": "漱月鸣筝"
   },
   "preferences": {
     "like": ["宠物", "AI", "日常"],
     "dislike": []
+  },
+  "watch": {
+    "enabled": true,
+    "intervalMinutes": 30,
+    "dailyMax": 12,
+    "windows": [{ "start": "09:00", "end": "23:00" }]
+  },
+  "share": {
+    "enabled": true,
+    "dailyMax": 10
   }
 }

@@ -42,6 +42,7 @@ import {
   videoDetail,
   videoFrames,
   DATA_DIR,
+  ROOT,
 } from './lib/douyin_http_client.mjs';
 
 const HELP = `douyin.mjs — 大肥鱼抖音适配层
@@ -57,6 +58,7 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   frames <id|链接> [--n N]                   下载并抽帧
   profile <sec_uid|主页链接>                  用户主页
   watch <关键词> [--count N] [--n N]         选一条没看过的视频并抽帧
+  send --to <昵称> --text <文字> [--send]     私信（默认 dry-run）
   help                                      显示本说明
 
 选项：
@@ -65,6 +67,9 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   --n N            抽帧数量（4–12）
   --seen FILE      已看过的 aweme_id 列表（默认 data/whale/douyin/seen.json）
   --out FILE       把本次 watch 结果写到指定 JSON 文件
+  --to NICK        私信目标昵称（需完全一致）
+  --text TEXT      私信内容（≤500 字）
+  --send           真发（需要 DOUYIN_IM_ALLOW_SEND=1 环境变量）
   --no-start       不自动启动本地 HTTP API
   --base-url URL   指定 HTTP API 地址
 `;
@@ -88,9 +93,10 @@ function parseArgs(argv) {
     else if (arg === '--count') options.count = Number(argv[++i] ?? '');
     else if (arg === '--sort') options.sort = argv[++i] ?? '';
     else if (arg === '--n') options.n = Number(argv[++i] ?? '');
+    else if (arg === '--send') options.send = true;
     else if (arg.startsWith('--')) {
-      // unknown flag: keep going; commands that need it should fail explicitly.
-      options[arg] = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
+      const key = arg.replace(/^--/, '');
+      options[key] = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
     } else positional.push(arg);
   }
   return { options, positional };
@@ -118,6 +124,17 @@ function readSeenIds(file) {
 function writeSeenIds(file, ids) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(ids, null, 2) + '\n', 'utf8');
+}
+
+function findImPython() {
+  if (process.env.DOUYIN_PYTHON) return process.env.DOUYIN_PYTHON;
+  const candidates = [
+    path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
+    path.join(ROOT, '.venv', 'bin', 'python'),
+    'python',
+  ];
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  return 'python';
 }
 
 async function run() {
@@ -225,6 +242,34 @@ async function run() {
         watchResult.outPath = outPath;
       }
       ok(watchResult);
+      return;
+    }
+    case 'send': {
+      const to = options.to;
+      const text = options.text;
+      if (!to) return fail('send 需要 --to <昵称>');
+      if (!text) return fail('send 需要 --text <文字>');
+      const reallySend = options.send === true;
+
+      const { spawnSync } = await import('node:child_process');
+      const py = findImPython();
+      const imScript = path.join(ROOT, 'python', 'douyin_im.py');
+      const env = {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        DOUYIN_DATA_DIR: DATA_DIR,
+        DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
+      };
+      const args = [imScript, 'send', '--to', to, '--text', text];
+      if (reallySend) args.push('--send');
+
+      const result = spawnSync(py, args, { env, timeout: 180_000, encoding: 'utf8' });
+      let payload;
+      try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
+      catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
+      ok(payload);
+      if (!payload.ok) process.exitCode = 1;
       return;
     }
     default:
