@@ -70,14 +70,6 @@ PW_CHROMIUM_GLOBS = (
     "~/AppData/Local/ms-playwright/chromium-*/chrome-win/chrome.exe",
 )
 
-STEALTH_JS = """
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-if (!window.chrome) { window.chrome = {}; }
-if (!window.chrome.runtime) { window.chrome.runtime = {}; }
-Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
-Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-"""
-
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -261,7 +253,6 @@ def launch_context(playwright, headless: bool = False):
         kill_profile_browsers()
         time.sleep(2)
         context = playwright.chromium.launch_persistent_context(**kwargs)
-    context.add_init_script(STEALTH_JS)
     return context
 
 

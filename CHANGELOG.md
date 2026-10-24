@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1 — 2026-10-24
+
+本地安全修改（fork 自 `JianHeShui/dsh-douyin`）：
+
+- 删除 `python/douyin_bridge.py` 中的 `STEALTH_JS` 注入及其
+  `context.add_init_script(...)` 调用。浏览器不再改写 `navigator.webdriver`、
+  `window.chrome`、`navigator.plugins` 等特征；登录/评论遇到验证码时继续人工处理。
+- 更新 `docs/SECURITY.md`，去掉“只加最小的 navigator.webdriver 清理”的表述，
+  明确不注入、不伪造指纹。
+- 新增 `tests/test_safety.py`：静态检查 Python 源码中不得出现 stealth 注入。
+- 保留 `dy-cli==0.2.2` 版本锁定；限频/退避只用于降低请求频率，不作为反检测能力。
+
 ## 1.1.0 — 2026-10-23
 
 Fork 后的第一个版本，基于上游 `dsh-douyin-toolkit` 1.0.0。

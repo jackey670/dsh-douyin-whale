@@ -4,6 +4,9 @@
 
 > 基于 [`SakuraMat0u/dsh-douyin-toolkit`](https://github.com/SakuraMat0u/dsh-douyin-toolkit)（MIT）改造：
 > 增加了 Linux/headless 适配、私信与群聊驱动、视频下载与抽帧、本地 HTTP API，并把所有服务器路径参数化。
+>
+> 本仓库是 `JianHeShui/dsh-douyin` 的本地安全 fork：移除了浏览器 stealth 注入，
+> 并加了静态回归测试；详见 [`FORK-NOTICE.md`](./FORK-NOTICE.md) 和 CHANGELOG 1.1.1。
 
 <p>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
