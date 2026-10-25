@@ -90,8 +90,28 @@ function checkDmForVideos(ownerNick) {
     const raw = (r.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'
     const parsed = JSON.parse(raw)
     if (!parsed.ok) { log(`[dm-check] 读私信失败: ${parsed.error?.message ?? 'unknown'}`); return [] }
-    return parsed.data?.video_urls ?? []
+
+    // 合并两路结果：文本 URL + protobuf 卡片 ID
+    const urls = parsed.data?.video_urls ?? []
+    const cardIds = parsed.data?.video_card_ids ?? []
+    const urlIds = urls.map(u => extractAwemeId(u)).filter(Boolean)
+    // protobuf ID 需要验证——太多假阳性（用户 ID、表情包等）
+    // 只保留 19 位且以 7 开头的（当前抖音 aweme_id 格式）
+    const validCardIds = cardIds.filter(id => id.length === 19 && id.startsWith('7'))
+    return [...new Set([...urlIds, ...validCardIds])]
   } catch (e) { log(`[dm-check] 异常: ${e.message}`); return [] }
+}
+
+// 验证一个 ID 是否真的是视频（尝试下载帧）
+function verifyVideoId(awemeId) {
+  try {
+    const r = spawnSync('node', [path.join(ROOT, 'douyin.mjs'), 'frames', awemeId, '--n', '4'],
+      { cwd: ROOT, timeout: 120_000, encoding: 'utf8', windowsHide: true,
+        env: { ...process.env, PYTHONUTF8: '1', DOUYIN_HEADLESS: '1' } })
+    const raw = (r.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'
+    const parsed = JSON.parse(raw)
+    return parsed.ok === true && Array.isArray(parsed.frames) && parsed.frames.length > 0
+  } catch { return false }
 }
 
 function extractAwemeId(url) {
@@ -211,13 +231,22 @@ async function tick() {
   checking = true
   try {
     const st = readState()
-    const urls = checkDmForVideos(ownerNick)
-    if (!urls.length) return
+    const candidateIds = checkDmForVideos(ownerNick)
+    if (!candidateIds.length) return
 
-    // 找第一条没看过的视频
     const seen = new Set(Array.isArray(st.seenIds) ? st.seenIds : [])
-    const awemeId = urls.map(u => extractAwemeId(u)).find(id => id && !seen.has(id))
-    if (!awemeId) { log('[tick] 主人私信里有视频但都看过了'); return }
+    const unseen = candidateIds.filter(id => !seen.has(id))
+    if (!unseen.length) return // 安静跳过，不写日志
+
+    // 验证第一个未看 ID 是否是真实视频
+    const awemeId = unseen[0]
+    log(`[tick] 候选视频 ${awemeId}，验证中…`)
+    if (!verifyVideoId(awemeId)) {
+      // 不是真视频，标为已看防止反复验证
+      log(`[tick] ${awemeId} 不是有效视频，跳过`)
+      writeState({ ...st, date: today(), seenIds: [...seen, awemeId] })
+      return
+    }
 
     log(`[tick] 发现主人推荐的视频 ${awemeId}，唤醒 agent`)
     const newSt = { ...st, date: today(), watches: (st.watches ?? 0) + 1, lastAwemeId: awemeId, seenIds: [...seen, awemeId] }
@@ -225,7 +254,6 @@ async function tick() {
 
     const r = await wakeAgent(watchPrompt(awemeId, ownerNick), 'watch')
     if (!r.ok) {
-      // 回滚
       writeState(st)
       log('[tick] watch 失败，回滚')
       return
@@ -272,7 +300,48 @@ function daemonPid() {
   } catch { return 0 }
 }
 
+/** 扫描并杀掉旧的 scheduler.mjs 进程（防多实例叠加消耗模型额度） */
+function cleanupOldInstances() {
+  try {
+    const { execSync } = require('node:child_process')
+    // 用 wmic 找所有 node 进程的命令行
+    const out = execSync('wmic process where "name=\'node.exe\'" get processid,commandline /format:list',
+      { encoding: 'utf8', timeout: 10000, windowsHide: true })
+    const lines = out.split('\n').filter(l => l.includes('CommandLine='))
+    const myPid = process.pid
+    for (const line of lines) {
+      if (line.includes('scheduler.mjs') && !line.includes('__zcode-plugin-host')) {
+        const pidMatch = out.match(new RegExp(`ProcessId=(\\d+)`, 'i'))
+        // wmic 输出格式是 CommandLine=... 后面跟 ProcessId=...
+        // 简化：直接从整块解析
+      }
+    }
+    // 改用 PowerShell（更可靠）
+    const psOut = execSync(
+      `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name='node.exe'\\" | Where-Object { $_.CommandLine -like '*scheduler.mjs*' -and $_.ProcessId -ne ${myPid} } | ForEach-Object { Write-Output $_.ProcessId }"`,
+      { encoding: 'utf8', timeout: 15000, windowsHide: true }
+    ).trim()
+    if (psOut) {
+      for (const pidStr of psOut.split('\n').map(s => s.trim()).filter(Boolean)) {
+        const pid = Number(pidStr)
+        if (pid && pid !== myPid) {
+          try {
+            execSync(`taskkill /PID ${pid} /T /F`, { timeout: 10000, windowsHide: true })
+            log(`[cleanup] 已杀掉旧调度器进程 PID ${pid}`)
+          } catch {}
+        }
+      }
+    }
+  } catch (e) {
+    // 清理失败不阻塞启动
+    log(`[cleanup] 清理旧实例失败（不阻塞）: ${e.message.slice(0, 100)}`)
+  }
+}
+
 function startDaemon() {
+  // 清理旧实例：扫描所有 scheduler.mjs 进程（排除自己）
+  cleanupOldInstances()
+
   if (daemonPid()) { console.log(`已在运行（PID ${daemonPid()}）`); return }
   log(`调度器启动（PID ${process.pid}）`)
   writeJson(PID_FILE, { pid: process.pid, startedAt: new Date().toISOString() })

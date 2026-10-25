@@ -1068,13 +1068,31 @@ VIDEO_URL_RE = re.compile(
 
 
 async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dict:
-    """打开与 target 的会话，读最近 limit 条消息，提取视频链接。"""
+    """打开与 target 的会话，读消息并提取视频 aweme_id。
+
+    两路提取：
+    1. DOM 文本里的 URL（文本消息中的链接）
+    2. 拦截 protobuf API 响应中的 aweme_id（视频卡片，DOM 里没有 URL）
+    """
+    proto_bodies: list[bytes] = []
+
     async with open_browser(cookie_file) as page:
+        # 在打开页面前注册响应拦截
+        async def _on_response(response):
+            url = response.url
+            if any(k in url for k in ["get_message_by_init", "get_user_message",
+                                      "get_conversation_list"]):
+                try:
+                    proto_bodies.append(await response.body())
+                except Exception:
+                    pass
+        page.on("response", _on_response)
+
         await ensure_chat_page(page)
         title = await open_conversation(page, target)
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
 
-        # 拿聊天区域的完整文本（最可靠的通用方式）
+        # ── 路线 1: DOM 文本 ──
         chat_text = ""
         for area_sel in CHAT_AREA:
             loc = page.locator(area_sel).first
@@ -1084,44 +1102,68 @@ async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dic
                     break
             except Exception:
                 continue
-
-        # 兜底：如果选择器没命中，直接拿 body 文本
         if not chat_text:
             chat_text = await page.inner_text("body")
 
-        # 按行拆分，去掉空行和噪音
         lines = [l.strip() for l in chat_text.split("\n") if l.strip()]
         messages = []
         for line in lines:
             if any(noise in line for noise in NOISE_PATTERNS):
                 continue
-            # 跳过纯时间戳行（如 "刚刚" "54分钟前" "21:46"）
             if re.match(r'^[\d:分钟前小时天月年刚\s]+$', line):
                 continue
-            # 跳过搜索框文本
             if line in ("搜索", "取消"):
                 continue
             if len(line) < 2:
                 continue
             messages.append(line)
-
-        # 只取最后 limit 条
         messages = messages[-limit:]
 
-        # 提取视频链接
-        video_urls = []
+        # 从文本消息中提取 URL
+        text_video_urls = []
         full_text = "\n".join(messages)
         for match in VIDEO_URL_RE.finditer(full_text):
             url = match.group(0).rstrip(".,;:)】」")
-            if url not in video_urls:
-                video_urls.append(url)
+            if url not in text_video_urls:
+                text_video_urls.append(url)
+
+        # ── 路线 2: 从 protobuf 响应中提取视频卡片的 aweme_id ──
+        from collections import Counter
+        all_ids = set()
+        exclude_ids = set()
+        for body in proto_bodies:
+            try:
+                text_repr = body.decode("utf-8", errors="ignore")
+                id_counts = Counter(re.findall(r'\b(\d{15,25})\b', text_repr))
+                # 高频短 ID 通常是 device_id / session（出现 >5 次）
+                for aid, cnt in id_counts.items():
+                    if cnt > 5:
+                        exclude_ids.add(aid)
+                for aid in id_counts:
+                    if aid not in exclude_ids:
+                        all_ids.add(aid)
+                # URL 形式
+                for m in re.finditer(r'/video/(\d{15,25})', text_repr):
+                    all_ids.add(m.group(1))
+            except Exception:
+                continue
+
+        # 排除 agent 自己发的文本 URL 里的 ID
+        text_url_ids = set()
+        for u in text_video_urls:
+            m = re.search(r'/video/(\d+)', u)
+            if m:
+                text_url_ids.add(m.group(1))
+
+        card_ids = sorted(all_ids - text_url_ids - exclude_ids)
 
         return {
             "target": target,
             "resolved_title": title,
             "message_count": len(messages),
             "messages": messages,
-            "video_urls": video_urls,
+            "video_urls": text_video_urls,
+            "video_card_ids": card_ids,
         }
     return {}
 
