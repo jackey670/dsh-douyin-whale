@@ -248,8 +248,9 @@ async function tick({ manual = false } = {}) {
     // 主人发来的内容 → 先并入本地队列（页面只渲染十来条，老卡片会被挤掉）
     const items = (dm.videos ?? []).filter(v => v.item_id && v.from !== 'me')
     const queued = mergeQueue(st.queue ?? [], items)
-    if (queued.length !== (st.queue ?? []).length) {
-      writeState({ ...readState(), queue: queued })
+    // 无条件落盘：合并结果必须持久，否则页面一滚动就丢
+    writeState({ ...readState(), queue: queued })
+    if (queued.length > (st.queue ?? []).length) {
       log(`[tick] 队列新增 ${queued.length - (st.queue ?? []).length} 条（共 ${queued.length}）`)
     }
     const replied = new Set(st.repliedIds ?? [])
