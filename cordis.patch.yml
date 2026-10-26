@@ -6,6 +6,9 @@
       name: dsh-douyin-whale
       config:
         enabled: true
+        # 值班大脑：宿主有 agents 能力时定时看私信并回复。
+        # 关掉后插件只剩工具 + 面板（独立调度器不受此开关影响）。
+        whaleEnabled: true
         writesEnabled: false
         toolEnabled:
           hot: true

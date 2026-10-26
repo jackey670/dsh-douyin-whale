@@ -176,6 +176,22 @@ node scheduler/scheduler.mjs --watch-now
 | `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
 | `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
 
+### 值班大脑（发布版，不依赖 ZCode）
+
+插件里有一条**常驻值班会话**（DSH 宿主的 agents 服务，会话 id 固定为
+`douyin-whale-duty-v1`）：装载后 15 秒跑第一轮，之后按配置间隔轮询。
+模型和上下文由宿主管，插件只负责投任务、收结果、回读确认。
+
+生命周期照抄 dsh-douyin-scroll 值班鱼的三步链：`agents.get(sid)` 找 live →
+`resume({resumeSessionId})` 跨重启恢复 → `create({sessionId, meta, setup})`
+兜底；create 撞「已存在」回头再 get。人设通过 `setup` 的
+`systemPrompt.section` 注入，只在该会话生效。宿主没有 agents 能力时整块
+降级为一条日志，工具和面板不受影响（可用配置 `whaleEnabled: false` 关闭）。
+
+投递给会话的消息是「够格进会话日志」的 user 消息（id / role / source / content
+四件套，缺一宿主会写坏日志）；完成检测轮询 `agent.status`，但**回读私信才是
+标记已回复的真判据**。
+
 ### 暂不支持的
 
 - **图文**（`aweType=0` 且带 `itemId`）：`frames` 只处理视频，图文会被自动跳过并记日志。
@@ -593,8 +609,10 @@ dsh-douyin-whale/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
 │   ├── tools.js                 # 11 个工具定义
 │   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
-│   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）
+│   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）+ 原子写
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现
+│   ├── duty_agent.js            # 值班 agent 会话（get/resume/create 链 + followup）
+│   ├── whale_tick.js            # 一轮 tick：读私信 → 挑最早 → 投值班 → 回读确认
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

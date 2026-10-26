@@ -14,6 +14,9 @@ import { fileURLToPath } from 'node:url';
 import { Backend, resolveConfig } from './lib/backend.js';
 import { createTools } from './lib/tools.js';
 import { createWhaleApi } from './lib/panel_api.js';
+import { createDutyAgent } from './lib/duty_agent.js';
+import { createWhaleTick } from './lib/whale_tick.js';
+import { readConfig, whalePaths } from './lib/whale_state.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -105,7 +108,57 @@ export function apply(ctx, config = {}) {
       });
     }
 
+    // ── 值班 tick（发布版的大脑；需要宿主 agents 能力）──
+    // agents 不可用时降级：只打日志，工具和面板照常。独立调度器（ZCode 版）
+    // 仍是本地执行路径，两者写同一份 ~/.dsh 状态，**不要同时开**。
+    const timerDisposers = [];
+    try {
+      const agentsApi = resolved.whaleEnabled === false
+        ? null
+        : (typeof ctx.get === 'function' ? ctx.get('agents') : ctx.agents);
+      if (agentsApi) {
+        const dutyLog = (message) => {
+          try { backend.log({ tool: 'duty', ok: true, event: 'log', message }); } catch { /* ignore */ }
+        };
+        const dutyAgent = createDutyAgent({
+          ctx,
+          log: dutyLog,
+          sessionId: 'douyin-whale-duty-v1',
+          cwd: resolved.dataDir || path.join(ROOT, 'data'),
+          // 人设已内置在 lib/duty_agent.js 的 DEFAULT_SYSTEM_PROMPT 里；
+          // 需要个性化时读 ~/.dsh 配置再拼 personaText 即可。
+        });
+        const tick = createWhaleTick({ log: dutyLog, dutyAgent, root: ROOT });
+        let disposed = false;
+        let timer = null;
+        const schedule = (afterMs) => {
+          if (disposed) return;
+          timer = setTimeout(async () => {
+            try { await tick(); } catch { /* tick 内部已兜底 */ }
+            schedule(Math.max(1, Number(readConfig(whalePaths()).watch?.intervalMinutes ?? 10) || 10) * 60_000);
+          }, afterMs);
+        };
+        schedule(15_000); // 装载后 15 秒先跑一轮，之后按配置间隔
+        timerDisposers.push(() => { disposed = true; if (timer) clearTimeout(timer); });
+        backend.log({ tool: 'duty', ok: true, event: 'timer_started' });
+      } else {
+        backend.log({
+          tool: 'duty',
+          ok: false,
+          event: 'agents_unavailable',
+          hint: '宿主没有 agents 能力，值班大脑不启动（独立调度器不受影响）',
+        });
+      }
+    } catch (e) {
+      backend.log({
+        tool: 'duty', ok: false, event: 'timer_error', message: String(e?.message ?? e),
+      });
+    }
+
     return () => {
+      for (const dispose of timerDisposers.reverse()) {
+        try { dispose(); } catch { /* unloading must not throw */ }
+      }
       for (const dispose of disposers.reverse()) {
         try {
           dispose();
