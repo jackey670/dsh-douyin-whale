@@ -774,10 +774,24 @@ async def trigger_send(page) -> str:
     return "enter"
 
 
-async def confirm_sent(page, text: str, timeout_ms: int = 15_000) -> dict:
-    """确认消息真正发出去：检查输入框已清空 + 自己的气泡出现在聊天区。"""
+async def confirm_sent(page, text: str, before_count: int | None = None,
+                       timeout_ms: int = 15_000) -> dict:
+    """确认消息真正发出去。
+
+    主判据（回读）：**「我发的、内容匹配」的消息条数有没有 +1**。
+    只数气泡总数会在别人刚好说了同样的话时假阳性；找 `isFromMe` 元素
+    则分不清「没发出去」和「class 名改了」。数匹配条数才是语义级证据。
+
+    ``before_count`` 是发送前的基线（由调用方在按回车之前取）。传 None
+    或 fiber 读不到时，退化到旧的「输入框清空 + 气泡出现」判据。
+    """
     deadline = time.monotonic() + timeout_ms / 1000
-    norm_text = re.sub(r"[\s\u200B\u200C\u200D\uFEFF]+", " ", text).strip()[:60]
+    composer_empty = False
+    readback = False
+    after_count = before_count
+    used_fallback = False
+    last_error = ""
+
     while time.monotonic() < deadline:
         for f in FAILURE_MARKERS:
             if await page.locator(f).first.count():
@@ -796,27 +810,44 @@ async def confirm_sent(page, text: str, timeout_ms: int = 15_000) -> dict:
             except Exception:
                 continue
 
-        # 条件 2：聊天区出现了自己发的气泡
-        bubble_found = False
-        try:
-            bubble_found = await page.evaluate(
-                """([txt]) => {
-                    const norm = s => (s || '').replace(/[\\s\\u200B\\u200C\\u200D\\uFEFF]+/g, ' ').trim();
-                    const bubbles = [...document.querySelectorAll(
-                        '[class*="isFromMe"], [class*="messageBoxisFromMe"], [class*="MessageItemTextisFromMe"]'
-                    )];
-                    return bubbles.some(b => norm(b.innerText).includes(norm(txt)));
-                }""",
-                [text],
-            )
-        except Exception:
-            pass
+        # 条件 2：回读「我发的、内容匹配」的条数
+        msgs = await read_messages(page)
+        if msgs is None:
+            # fiber 读不到 → 退化到旧的气泡判据
+            used_fallback = True
+            try:
+                readback = bool(await page.evaluate(
+                    """([txt]) => {
+                        const norm = s => (s || '').replace(/[\\s\\u200B\\u200C\\u200D\\uFEFF]+/g, ' ').trim();
+                        const want = norm(txt);
+                        if (!want) return false;
+                        const head = want.slice(0, 20);
+                        const bubbles = [...document.querySelectorAll('[class*="isFromMe"]')];
+                        return bubbles.some(b => {
+                            const t = norm(b.innerText);
+                            return t === want || (head && t.startsWith(head));
+                        });
+                    }""",
+                    [text],
+                ))
+            except Exception as exc:
+                last_error = str(exc)[:120]
+        elif before_count is not None:
+            after_count = count_my_matching(msgs, text)
+            readback = after_count > before_count
+        else:
+            # 没给基线：至少要有 1 条匹配，聊胜于无
+            after_count = count_my_matching(msgs, text)
+            readback = after_count >= 1
 
-        # 两个条件都满足才算真的发出去
-        if composer_empty and bubble_found:
+        if composer_empty and readback:
             return {
                 "bubble_found": True,
                 "composer_cleared": True,
+                "readback": readback,
+                "my_msg_before": before_count,
+                "my_msg_after": after_count,
+                "judge": "fallback_bubble" if used_fallback else "readback_count",
                 "confirmed_after_ms": timeout_ms - int((deadline - time.monotonic()) * 1000),
             }
 
@@ -824,8 +855,11 @@ async def confirm_sent(page, text: str, timeout_ms: int = 15_000) -> dict:
 
     raise IMError(
         "SEND_UNCONFIRMED",
-        f"已触发发送但未确认（输入框{'已清' if composer_empty else '未清'}，气泡{'出现' if bubble_found else '未出现'}）；"
-        "请人工核实，勿自动重试",
+        f"已触发发送但未确认（输入框{'已清' if composer_empty else '未清'}，"
+        f"回读{'通过' if readback else '未通过'}"
+        + (f"，我发的匹配条数 {before_count}→{after_count}" if before_count is not None else "")
+        + (f"，错误 {last_error}" if last_error else "")
+        + "）；请人工核实，勿自动重试",
     )
 
 
@@ -1008,9 +1042,12 @@ async def cmd_send(cookie_file: str | None, target: str, text: str, do_send: boo
         # 清空前先留证：这张图能看到文本确实进了输入框
         result["screenshot_composed"] = await screenshot(page, target) if want_shot else ""
         if do_send:
+            # 按回车之前先数一遍「我发的、内容匹配」的条数，作为回读基线
+            pre = await read_messages(page)
+            baseline = count_my_matching(pre, text) if pre is not None else None
             how = await trigger_send(page)
             result["trigger"] = how
-            result.update(await confirm_sent(page, text))
+            result.update(await confirm_sent(page, text, baseline))
             result["sent"] = True
             result["screenshot"] = await screenshot(page, target + "_sent") if want_shot else ""
         else:
@@ -1183,6 +1220,61 @@ READ_MESSAGES_JS = r"""
   };
 }
 """
+
+
+_ZW_RE = re.compile(r"[\u200B\u200C\u200D\uFEFF]")
+_WS_RE = re.compile(r"\s+")
+
+
+def _norm_text(s: str) -> str:
+    """归一化正文用于比对：删零宽字符，再把连续空白压成一个空格。
+
+    零宽字符必须**删掉**而不是换成空格——它是不可见的，换成空格会把
+    单词/句子切断，导致回读比对失败。
+    """
+    return _WS_RE.sub(" ", _ZW_RE.sub("", s or "")).strip()
+
+
+async def read_messages(page) -> list[dict] | None:
+    """读当前会话的结构化消息（旧 → 新）。
+
+    返回 ``None`` 表示 fiber 读不到（前端改版等），调用方应退化到旧判据；
+    返回 ``[]`` 表示确实没有消息。
+    """
+    try:
+        raw = await page.evaluate(READ_MESSAGES_JS) or {}
+        if not isinstance(raw, dict):
+            return None
+        diag = raw.get("diag") or {}
+        nodes = int(diag.get("nodes") or 0)
+        # 有消息节点、却一条 fiber / parsedContent 都读不到 ⇒ fiber 不可用
+        # （前端改版，或 fixture 这种手写 DOM），交给调用方退化到旧判据。
+        if nodes > 0 and (int(diag.get("fiber_hits") or 0) == 0
+                          or int(diag.get("parsed_hits") or 0) == 0):
+            return None
+        return raw.get("messages") or []
+    except Exception:
+        return None
+
+
+def count_my_matching(msgs: list[dict], text: str) -> int:
+    """数「我发的、内容与 text 匹配」的消息条数。
+
+    用「整段相等 或 前 20 字前缀相等」匹配：抖音会对正文做空白归一化，
+    也可能截断长文本；只数总数会在别人刚好说了同样的话时假阳性。
+    """
+    want = _norm_text(text)
+    if not want:
+        return 0
+    head = want[:20]
+    n = 0
+    for m in msgs:
+        if m.get("from") != "me":
+            continue
+        got = _norm_text(m.get("text") or "")
+        if got == want or (head and got.startswith(head)):
+            n += 1
+    return n
 
 
 def _fallback_text_lines(chat_text: str) -> list[str]:

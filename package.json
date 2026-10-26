@@ -44,7 +44,6 @@
   "bugs": {
     "url": "https://github.com/jackey670/dsh-douyin-whale/issues"
   },
-
   "engines": {
     "node": ">=22"
   },
@@ -58,6 +57,8 @@
     "http": "python python/douyin_http.py",
     "douyin": "node douyin.mjs",
     "test:fixture": "python tests/test_fixture.py",
-    "test:safety": "python -m pytest -q tests/test_safety.py"
+    "test:safety": "python -m pytest -q tests/test_safety.py",
+    "test:readback": "python -m pytest -q tests/test_readback.py",
+    "test": "python -m pytest -q tests/test_safety.py tests/test_readback.py"
   }
 }
