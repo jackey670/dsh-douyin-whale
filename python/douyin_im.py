@@ -254,19 +254,94 @@ def profile_has_data() -> bool:
         return False
 
 
-def acquire_lock():
-    """串行化：同一时刻只允许一个浏览器实例。返回文件句柄（需保活）。"""
-    os.makedirs(DATA, exist_ok=True)
-    fh = open(LOCK_FILE, "w")
+class _LockHandle:
+    """锁句柄：close() 时删掉锁文件。"""
+
+    def __init__(self, fh=None, file_lock=False):
+        self._fh = fh
+        self._file_lock = file_lock
+
+    def close(self):
+        if self._file_lock:
+            try:
+                os.remove(LOCK_FILE)
+            except Exception:
+                pass
+        if self._fh:
+            try:
+                self._fh.close()
+            except Exception:
+                pass
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
     try:
-        import fcntl
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        fh.close()
-        raise IMError("BUSY", "已有另一个抖音私信任务在运行，请稍后再试")
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+    except Exception:
+        return True
+
+
+def acquire_lock(timeout_s: float = 180.0):
+    """串行化：同一时刻只允许一个浏览器实例。
+
+    Windows 上没有 fcntl —— 旧实现的锁在 Windows 上是**空跑**，调度器和手动
+    命令可以同时开同一个持久化 profile，后启动的那个会直接失败。这里补一个
+    跨平台的实现：POSIX 用 flock，其它平台用 O_EXCL 建文件 + PID + 过期清理。
+    """
+    os.makedirs(DATA, exist_ok=True)
+    try:
+        import fcntl  # noqa: F401
+        fh = open(LOCK_FILE, "w")
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fh.close()
+            raise IMError("BUSY", "已有另一个抖音私信任务在运行，请稍后再试")
+        return _LockHandle(fh, file_lock=False)
     except ImportError:
         pass
-    return fh
+
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode("ascii"))
+            os.close(fd)
+            return _LockHandle(file_lock=True)
+        except FileExistsError:
+            # 上次异常退出可能留下僵死锁：PID 不在了就清掉重来
+            stale_pid = 0
+            try:
+                with open(LOCK_FILE, encoding="ascii", errors="ignore") as fh:
+                    stale_pid = int((fh.read() or "0").strip() or 0)
+            except Exception:
+                stale_pid = 0
+            stale = False
+            if stale_pid:
+                stale = not _pid_alive(stale_pid)
+            else:
+                # 老版本（POSIX flock 实现）留下的空锁文件没有 PID；
+                # 超过 60 秒还没人更新，就当僵死锁清掉。
+                try:
+                    stale = (time.time() - os.path.getmtime(LOCK_FILE)) > 60
+                except Exception:
+                    stale = True
+            if stale:
+                try:
+                    os.remove(LOCK_FILE)
+                except Exception:
+                    pass
+                continue
+            if time.monotonic() > deadline:
+                raise IMError(
+                    "BUSY",
+                    f"已有另一个抖音私信任务在运行（锁文件 {LOCK_FILE}，PID {stale_pid or '未知'}）")
+            time.sleep(0.5)
 
 
 async def first_visible(page, selectors, timeout_ms: int = 12_000):
