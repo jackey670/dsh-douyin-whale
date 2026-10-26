@@ -16,7 +16,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn, spawnSync, execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -183,6 +183,14 @@ function personaLine() {
   return `［身份］你是${cfg.persona?.name ?? '大肥鱼'}，对用户称「${cfg.persona?.ownerTitle ?? '主人'}」。自称「本鱼/我/本小姐」。语气轻松俏皮。`
 }
 
+/** 数「我发的」消息条数。fiber 读不到时 messages 是纯文本数组，这里返回 null。 */
+function countMeMessages(dm) {
+  const msgs = Array.isArray(dm?.messages) ? dm.messages : []
+  const objs = msgs.filter(m => m && typeof m === 'object')
+  if (!objs.length) return null
+  return objs.filter(m => m.from === 'me').length
+}
+
 // ── tick ────────────────────────────────────────────────────────────────────
 let checking = false
 async function tick({ manual = false } = {}) {
@@ -228,16 +236,28 @@ async function tick({ manual = false } = {}) {
     }
 
     const next = pending[0]
+    const meBefore = countMeMessages(dm)
     log(`[tick] 私信共 ${items.length} 条内容，待回复 ${pending.length} 条 → 处理 ${next.item_id}`)
 
     const r = await wakeAgent(watchPromptFIFO(dm, ownerNick, next, pending.length), 'watch')
 
     if (r.ok) {
-      const newSt = readState()
-      newSt.repliedIds = capRepliedIds([...(newSt.repliedIds ?? []), next.item_id])
-      newSt.watches = (newSt.watches ?? 0) + 1
-      writeState(newSt)
-      log(`[tick] ${next.item_id} 处理完成，剩余 ${pending.length - 1} 条`)
+      // ⚠️ agent 跑完 ≠ 私信发出去了。它会写日记、会报告「登录态过期」，
+      //    这些都算 r.ok。必须回读一次私信，确认「我发的」消息真的多了一条。
+      const after = meBefore === null ? null : checkDm(null, ownerNick)
+      const meAfter = after ? countMeMessages(after) : null
+      const delivered = meBefore !== null && meAfter !== null && meAfter > meBefore
+
+      if (delivered) {
+        const newSt = readState()
+        newSt.repliedIds = capRepliedIds([...(newSt.repliedIds ?? []), next.item_id])
+        newSt.watches = (newSt.watches ?? 0) + 1
+        writeState(newSt)
+        log(`[tick] ${next.item_id} 已确认送达（我发的消息 ${meBefore}→${meAfter}），剩余 ${pending.length - 1} 条`)
+      } else {
+        log(`[tick] ⚠️ ${next.item_id} agent 已跑完但没确认到新私信`
+          + `（我发的消息 ${meBefore ?? '未知'}→${meAfter ?? '读取失败'}），不标记，下轮重试`)
+      }
 
       // 登录失效检测
       const resp = String(r.response ?? '')
@@ -307,39 +327,24 @@ function daemonPid() {
 
 /** 扫描并杀掉旧的 scheduler.mjs 进程（防多实例叠加消耗模型额度） */
 function cleanupOldInstances() {
+  if (os.platform() !== 'win32') return
   try {
-    const { execSync } = require('node:child_process')
-    // 用 wmic 找所有 node 进程的命令行
-    const out = execSync('wmic process where "name=\'node.exe\'" get processid,commandline /format:list',
-      { encoding: 'utf8', timeout: 10000, windowsHide: true })
-    const lines = out.split('\n').filter(l => l.includes('CommandLine='))
     const myPid = process.pid
-    for (const line of lines) {
-      if (line.includes('scheduler.mjs') && !line.includes('__zcode-plugin-host')) {
-        const pidMatch = out.match(new RegExp(`ProcessId=(\\d+)`, 'i'))
-        // wmic 输出格式是 CommandLine=... 后面跟 ProcessId=...
-        // 简化：直接从整块解析
-      }
-    }
-    // 改用 PowerShell（更可靠）
     const psOut = execSync(
       `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name='node.exe'\\" | Where-Object { $_.CommandLine -like '*scheduler.mjs*' -and $_.ProcessId -ne ${myPid} } | ForEach-Object { Write-Output $_.ProcessId }"`,
       { encoding: 'utf8', timeout: 15000, windowsHide: true }
     ).trim()
-    if (psOut) {
-      for (const pidStr of psOut.split('\n').map(s => s.trim()).filter(Boolean)) {
-        const pid = Number(pidStr)
-        if (pid && pid !== myPid) {
-          try {
-            execSync(`taskkill /PID ${pid} /T /F`, { timeout: 10000, windowsHide: true })
-            log(`[cleanup] 已杀掉旧调度器进程 PID ${pid}`)
-          } catch {}
-        }
-      }
+    for (const pidStr of psOut.split('\n').map(s => s.trim()).filter(Boolean)) {
+      const pid = Number(pidStr)
+      if (!pid || pid === myPid) continue
+      try {
+        execSync(`taskkill /PID ${pid} /T /F`, { timeout: 10000, windowsHide: true })
+        log(`[cleanup] 已杀掉旧调度器进程 PID ${pid}`)
+      } catch {}
     }
   } catch (e) {
     // 清理失败不阻塞启动
-    log(`[cleanup] 清理旧实例失败（不阻塞）: ${e.message.slice(0, 100)}`)
+    log(`[cleanup] 清理旧实例失败（不阻塞）: ${String(e.message).slice(0, 100)}`)
   }
 }
 

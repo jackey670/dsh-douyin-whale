@@ -120,10 +120,8 @@ COOKIE_CANDIDATES = [
     os.path.expanduser("~/.dy/cookies/default.json"),
 ]
 
-UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36"
-)
+# 不再覆盖 user_agent：给 Windows 上的 Chrome 套 Linux UA 会让登录态和
+# 运行态指纹对不上，抖音会判定为「新设备」并把会话踢掉。用浏览器真实 UA。
 
 # --------------------------------------------------------------------------
 # DOM 选择器（按优先级排列，全部为"尽量用 class 前缀 + data-e2e"的写法）
@@ -248,6 +246,14 @@ def find_cookie_file() -> str | None:
     return None
 
 
+def profile_has_data() -> bool:
+    """持久化 profile 目录里有没有东西（有就说明登录过，未必还有效）。"""
+    try:
+        return os.path.isdir(PROFILE_DIR) and bool(os.listdir(PROFILE_DIR))
+    except Exception:
+        return False
+
+
 def acquire_lock():
     """串行化：同一时刻只允许一个浏览器实例。返回文件句柄（需保活）。"""
     os.makedirs(DATA, exist_ok=True)
@@ -334,14 +340,26 @@ async def text_is(loc, expected: str) -> bool:
 # 浏览器
 # --------------------------------------------------------------------------
 async def new_context(pw, cookie_file: str | None):
-    """普通 browser context（storage_state 只支持 new_context，不支持 persistent）。"""
+    """用**持久化 profile** 起浏览器，而不是每次从 storage_state 新建 context。
+
+    为什么必须这样：抖音把「同一份 storage_state 反复新建 context」看成一台
+    又一台新设备，短时间内多次「新设备登录」会直接把会话踢掉。实测症状是
+    **发完一条私信就掉登录**——读消息一直正常，一发送就废。
+
+    持久化 profile 让 cookie、localStorage、设备指纹都留在同一个目录里，
+    每次启动对抖音来说只是「同一个浏览器重启」，不是新设备。
+
+    ``cookie_file`` 只在 profile 里还没有登录态时用于一次性迁移（老版本遗留）。
+    """
     if not CHROME:
         raise IMError(
             "NO_BROWSER",
             "未找到可用浏览器：请安装 Chromium/Chrome，或用 DOUYIN_BROWSER "
             "指定可执行文件绝对路径（例如 /usr/bin/chromium）",
         )
-    browser = await pw.chromium.launch(
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    ctx = await pw.chromium.launch_persistent_context(
+        PROFILE_DIR,
         headless=resolve_headless(),
         executable_path=CHROME,
         args=[
@@ -349,16 +367,29 @@ async def new_context(pw, cookie_file: str | None):
             "--disable-dev-shm-usage",
             "--disable-gpu",
         ],
-    )
-    ctx_kwargs = dict(
         viewport={"width": 1440, "height": 950},
         locale="zh-CN",
-        user_agent=UA,
+        # 不覆盖 user_agent：用浏览器自己的真实 UA。给 Windows 上的 Chrome
+        # 套一个 Linux UA 本身就是一条显眼的指纹不一致。
     )
-    if cookie_file:
-        ctx_kwargs["storage_state"] = cookie_file
-    ctx = await browser.new_context(**ctx_kwargs)
-    return browser, ctx
+
+    # 一次性迁移：profile 里没有 sessionid、但有老的 storage_state 文件时，
+    # 把里面的 cookie 灌进来。已有登录态时绝不覆盖（否则会把新会话冲掉）。
+    if cookie_file and os.path.isfile(cookie_file):
+        try:
+            existing = await ctx.cookies("https://www.douyin.com")
+            has_session = any(
+                c.get("name") in ("sessionid", "sessionid_ss") for c in existing)
+            if not has_session:
+                with open(cookie_file, encoding="utf-8") as fh:
+                    state = json.load(fh) or {}
+                cookies = state.get("cookies") or []
+                if cookies:
+                    await ctx.add_cookies(cookies)
+        except Exception:
+            pass
+
+    return None, ctx
 
 
 async def ensure_chat_page(page) -> None:
@@ -891,7 +922,9 @@ async def open_browser(cookie_file: str | None):
     ctx = None
     try:
         browser, ctx = await new_context(pw, cookie_file)
-        page = await ctx.new_page()
+        # 持久化 profile 启动时自带一个空白页，复用它（再开新页会多一个 tab）
+        pages = list(getattr(ctx, "pages", []) or [])
+        page = pages[0] if pages else await ctx.new_page()
         yield page
     finally:
         for step in (ctx.close if ctx else None, browser.close if browser else None,
@@ -907,13 +940,18 @@ async def open_browser(cookie_file: str | None):
 async def cmd_status(cookie_file: str | None) -> dict:
     out = {"cookie_file": cookie_file or None, "chrome": CHROME,
            "chrome_exists": os.path.exists(CHROME),
+           "profile": PROFILE_DIR,
+           "profile_has_data": profile_has_data(),
            "data_dir": DATA,
            # 真实发送的总闸：只有环境变量为 1 且命令带 --send 才会发出去
            "send_allowed": os.environ.get("DOUYIN_IM_ALLOW_SEND") == "1"}
-    if not cookie_file:
-        raise IMError("NEED_LOGIN",
-                      "未找到抖音 cookie（storage_state）。请先 dy login 扫码登录，"
-                      f"期望路径: {COOKIE_CANDIDATES[1]}")
+    if not cookie_file and not profile_has_data():
+        out.update({
+            "logged_in": False,
+            "hint": "还没有登录：先跑 python tools/export_login_state.py 扫码"
+                    "（登录会写进持久化 profile，运行时复用同一份）",
+        })
+        return out
     async with open_browser(cookie_file) as page:
         await ensure_chat_page(page)
         search, sel = await first_visible(page, SEARCH_INPUTS, 5_000)
@@ -1345,6 +1383,7 @@ async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dic
                 "item_id": item_id,
                 "title": m.get("title") or "",
                 "sender_basis": m.get("sender_basis") or "",
+                "ts": int(m.get("ts") or 0),
             })
 
         # 主人发来的内容（视频 + 图文）：只要带 itemId 就算一条，旧 → 新
@@ -1472,10 +1511,10 @@ def main(argv=None) -> int:
         async def run():
             if args.cmd == "status":
                 return await cmd_status(cookie_file)
-            if cookie_file is None:
+            if cookie_file is None and not profile_has_data():
                 raise IMError("NEED_LOGIN",
-                              "未找到抖音 cookie（storage_state），需要先登录。"
-                              f"期望路径: {COOKIE_CANDIDATES[1]}")
+                              "还没登录过。先跑 python tools/export_login_state.py 扫码，"
+                              f"登录态会写进持久化 profile：{PROFILE_DIR}")
             if args.cmd == "conversations":
                 return await cmd_conversations(cookie_file, args.limit, False)
             if args.cmd == "groups":

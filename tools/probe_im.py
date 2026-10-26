@@ -117,8 +117,7 @@ async def main() -> int:
 
     results = []
     async with async_playwright() as pw:
-        ctx_kwargs = dict(viewport={"width": 1440, "height": 900}, locale="zh-CN",
-                          user_agent=D.UA)
+        ctx_kwargs = dict(viewport={"width": 1440, "height": 900}, locale="zh-CN")
         if cookie_file:
             ctx_kwargs["storage_state"] = cookie_file
         browser = await pw.chromium.launch(

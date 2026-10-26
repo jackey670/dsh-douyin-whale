@@ -93,7 +93,6 @@ async def run(args) -> int:
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 900},
                 locale="zh-CN",
-                user_agent=D.UA,
             )
 
         page = context.pages[0] if context.pages else await context.new_page()
@@ -173,7 +172,9 @@ def main() -> int:
         ROOT, "data", "home", ".dy", "cookies", "default.json"),
         help="输出文件（默认 data/home/.dy/cookies/default.json）")
     ap.add_argument("--browser", default="", help="浏览器可执行文件（默认自动发现）")
-    ap.add_argument("--profile", default="", help="从已有的 persistent profile 打开并导出")
+    ap.add_argument("--profile", default=os.path.join(ROOT, "data", "im-profile"),
+                    help="持久化 profile 目录（默认 data/im-profile —— 和运行时用同一个，"
+                         "这样登录态、设备指纹都留在同一处，抖音不会当成新设备）")
     ap.add_argument("--timeout", type=int, default=300, help="等待登录的秒数（默认 300）")
     args = ap.parse_args()
 
