@@ -59,6 +59,8 @@
     "test:fixture": "python tests/test_fixture.py",
     "test:safety": "python -m pytest -q tests/test_safety.py",
     "test:readback": "python -m pytest -q tests/test_readback.py",
-    "test": "python -m pytest -q tests/test_safety.py tests/test_readback.py"
+    "test": "python -m pytest -q tests/test_safety.py tests/test_readback.py",
+    "test:memory": "node scheduler/memory.test.mjs",
+    "test:js": "node scheduler/memory.test.mjs"
   }
 }
