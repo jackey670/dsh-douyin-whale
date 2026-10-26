@@ -41,8 +41,11 @@ import glob
 import json
 import os
 import re
+import socket
+import subprocess
 import sys
 import time
+import urllib.request
 from datetime import datetime
 
 # --------------------------------------------------------------------------
@@ -483,17 +486,135 @@ async def text_is(loc, expected: str) -> bool:
 # --------------------------------------------------------------------------
 # 浏览器
 # --------------------------------------------------------------------------
+BROWSER_STATE = os.path.join(DATA, "im-browser.json")
+CDP_PORT_FIRST, CDP_PORT_LAST = 9334, 9374
+# 常驻浏览器默认关闭。
+# 实测（2026-10-26）复用同一个 headless 浏览器时，命令耗时在 6s~90s 之间
+# 剧烈抖动，偶尔直接卡死；单独启停一个浏览器反而稳定在 24s 左右。
+# 怀疑与 headless 长驻页面的渲染/定时器状态有关，等能稳定复现再开。
+# 想试的话：DOUYIN_PERSISTENT_BROWSER=1
+PERSISTENT_BROWSER = os.environ.get("DOUYIN_PERSISTENT_BROWSER") == "1"
+
+
+def _cdp_alive(port: int) -> bool:
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/json/version", timeout=0.8) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _free_port() -> int:
+    for p in range(CDP_PORT_FIRST, CDP_PORT_LAST):
+        s = socket.socket()
+        try:
+            s.bind(("127.0.0.1", p))
+            return p
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return 0
+
+
+def _save_browser_port(port: int) -> None:
+    try:
+        os.makedirs(DATA, exist_ok=True)
+        with open(BROWSER_STATE, "w", encoding="utf-8") as fh:
+            json.dump({"port": port, "pid": 0, "at": time.time()}, fh)
+    except Exception:
+        pass
+
+
+def ensure_persistent_browser() -> int:
+    """确保有一个常驻 Chromium 在跑（持久化 profile），返回 CDP 端口。
+
+    为什么要常驻：每条命令都 `launch_persistent_context` 的话，一次读私信里
+    光启动 Chromium 就占 8 秒左右；而且频繁启停本身就是一条噪音。复用同一个
+    浏览器进程后，命令只剩导航和页面操作。
+
+    起不来就返回 0，调用方退回「每次启动」的老路（不影响正确性）。
+    """
+    if not CHROME:
+        return 0
+    try:
+        with open(BROWSER_STATE, encoding="utf-8") as fh:
+            saved = int(json.load(fh).get("port") or 0)
+    except Exception:
+        saved = 0
+    if saved and _cdp_alive(saved):
+        return saved
+    for p in range(CDP_PORT_FIRST, CDP_PORT_LAST):
+        if _cdp_alive(p):
+            _save_browser_port(p)
+            return p
+
+    port = _free_port()
+    if not port:
+        return 0
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    args = [CHROME]
+    if resolve_headless():
+        args.append("--headless=new")
+    args += [
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={PROFILE_DIR}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--window-size=1440,950",
+        "--lang=zh-CN",
+        # 常驻的 headless 页面会被当成「后台标签」节流（定时器降频、渲染暂停），
+        # 复用它的时候导航和 evaluate 会慢到几十秒。这三条是关掉节流的标准做法。
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-features=CalculateNativeWinOcclusion",
+        "about:blank",
+    ]
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        subprocess.Popen(args, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=flags)
+    except Exception:
+        return 0
+    for _ in range(60):
+        if _cdp_alive(port):
+            _save_browser_port(port)
+            return port
+        time.sleep(0.5)
+    return 0
+
+
+async def _import_cookies_once(ctx, cookie_file: str | None) -> None:
+    """老版本只有 storage_state：profile 里没有 sessionid 时灌一次。
+
+    已有登录态时绝不覆盖 —— 否则会把刚登录的新会话冲掉。
+    """
+    if not cookie_file or not os.path.isfile(cookie_file):
+        return
+    try:
+        existing = await ctx.cookies("https://www.douyin.com")
+        if any(c.get("name") in ("sessionid", "sessionid_ss") for c in existing):
+            return
+        with open(cookie_file, encoding="utf-8") as fh:
+            state = json.load(fh) or {}
+        cookies = state.get("cookies") or []
+        if cookies:
+            await ctx.add_cookies(cookies)
+    except Exception:
+        pass
+
+
 async def new_context(pw, cookie_file: str | None):
-    """用**持久化 profile** 起浏览器，而不是每次从 storage_state 新建 context。
+    """返回 (browser, ctx, shared)。shared=True 表示连的是常驻浏览器，不能关。
 
-    为什么必须这样：抖音把「同一份 storage_state 反复新建 context」看成一台
-    又一台新设备，短时间内多次「新设备登录」会直接把会话踢掉。实测症状是
-    **发完一条私信就掉登录**——读消息一直正常，一发送就废。
-
-    持久化 profile 让 cookie、localStorage、设备指纹都留在同一个目录里，
-    每次启动对抖音来说只是「同一个浏览器重启」，不是新设备。
-
-    ``cookie_file`` 只在 profile 里还没有登录态时用于一次性迁移（老版本遗留）。
+    优先复用常驻浏览器；连不上时退回 `launch_persistent_context`。
+    两种方式用的是**同一个持久化 profile**，cookie、localStorage 都在里面，
+    所以重启对抖音来说只是「同一个浏览器重启」，不是新设备。
     """
     if not CHROME:
         raise IMError(
@@ -501,6 +622,20 @@ async def new_context(pw, cookie_file: str | None):
             "未找到可用浏览器：请安装 Chromium/Chrome，或用 DOUYIN_BROWSER "
             "指定可执行文件绝对路径（例如 /usr/bin/chromium）",
         )
+
+    port = ensure_persistent_browser() if PERSISTENT_BROWSER else 0
+    if port:
+        try:
+            browser = await pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            ctx = browser.contexts[0] if browser.contexts else None
+            if ctx is None:
+                await browser.close()
+            else:
+                await _import_cookies_once(ctx, cookie_file)
+                return browser, ctx, True
+        except Exception:
+            pass
+
     os.makedirs(PROFILE_DIR, exist_ok=True)
     ctx = await pw.chromium.launch_persistent_context(
         PROFILE_DIR,
@@ -517,24 +652,8 @@ async def new_context(pw, cookie_file: str | None):
         # 不覆盖 user_agent：用浏览器自己的真实 UA。给 Windows 上的 Chrome
         # 套一个 Linux UA 本身就是一条显眼的指纹不一致。
     )
-
-    # 一次性迁移：profile 里没有 sessionid、但有老的 storage_state 文件时，
-    # 把里面的 cookie 灌进来。已有登录态时绝不覆盖（否则会把新会话冲掉）。
-    if cookie_file and os.path.isfile(cookie_file):
-        try:
-            existing = await ctx.cookies("https://www.douyin.com")
-            has_session = any(
-                c.get("name") in ("sessionid", "sessionid_ss") for c in existing)
-            if not has_session:
-                with open(cookie_file, encoding="utf-8") as fh:
-                    state = json.load(fh) or {}
-                cookies = state.get("cookies") or []
-                if cookies:
-                    await ctx.add_cookies(cookies)
-        except Exception:
-            pass
-
-    return None, ctx
+    await _import_cookies_once(ctx, cookie_file)
+    return None, ctx, False
 
 
 async def ensure_chat_page(page) -> None:
@@ -542,6 +661,21 @@ async def ensure_chat_page(page) -> None:
     await page.goto(CHAT_URL, wait_until="domcontentloaded", timeout=45_000)
     await page.wait_for_timeout(3_000)
     await dismiss_save_password(page)
+
+    # 快速轮询：风控面板 / 登录面板 / 搜索框，谁先出现就按谁处理。
+    # 不能按固定顺序死等某一个——已登出时等搜索框会白等 18 秒；
+    # 而登录面板是异步挂载的，只看 1 秒又会漏（实测两种都会踩）。
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        if await any_visible(page, RISK_MARKERS, 300):
+            raise IMError("RISK_CONTROL", "抖音弹出安全验证，已停止（不要尝试绕过验证码）")
+        if await any_visible(page, LOGIN_MARKERS, 300):
+            raise IMError("NEED_LOGIN",
+                          "需要先登录抖音：请先扫码登录（登录会写进持久化 profile）")
+        if await first_visible(page, SEARCH_INPUTS, 300):
+            await page.wait_for_timeout(800)
+            return
+        await page.wait_for_timeout(250)
 
     # 搜索框是 SPA 异步挂载的，冷启动可能慢；最多等 ~25s，只在必要时 reload 一次
     loc, sel = await first_visible(page, SEARCH_INPUTS, 10_000)
@@ -1065,21 +1199,36 @@ async def open_browser(cookie_file: str | None):
     pw = await async_playwright().start()
     browser = None
     ctx = None
+    shared = False
     try:
-        browser, ctx = await new_context(pw, cookie_file)
-        # 持久化 profile 启动时自带一个空白页，复用它（再开新页会多一个 tab）
+        browser, ctx, shared = await new_context(pw, cookie_file)
+        # 常驻浏览器里可能开着好几个标签页：优先挑已经在抖音上的那个，
+        # 否则挑第一个。用错页面会让后续判定多绕一圈。
         pages = list(getattr(ctx, "pages", []) or [])
-        page = pages[0] if pages else await ctx.new_page()
+        page = next((p for p in pages if "douyin.com" in (p.url or "")), None)
+        if page is None:
+            page = pages[0] if pages else await ctx.new_page()
         yield page
     finally:
-        for step in (ctx.close if ctx else None, browser.close if browser else None,
-                     pw.stop):
-            if step is None:
-                continue
+        if shared:
+            # 连的是常驻浏览器：只断开，绝不能 close 掉（下一个命令还要用）
             try:
-                await step()
+                await browser.close()
             except Exception:
                 pass
+            try:
+                await pw.stop()
+            except Exception:
+                pass
+        else:
+            for step in (ctx.close if ctx else None, browser.close if browser else None,
+                         pw.stop):
+                if step is None:
+                    continue
+                try:
+                    await step()
+                except Exception:
+                    pass
 
 
 async def cmd_status(cookie_file: str | None) -> dict:
@@ -1138,6 +1287,24 @@ CONV_JS = r"""
     }
     return '';
   };
+  // 未读数：fiber 里的 conversation.unreadCount 比红点徽标可靠
+  // （徽标会被「99+」截断，也可能被别的红点干扰）。
+  const unreadOf = (el) => {
+    const fk = Object.keys(el).find(k => k.indexOf('__reactFiber$') === 0
+      || k.indexOf('__reactInternalInstance$') === 0);
+    if (!fk) return null;
+    let f = el[fk], d = 0;
+    while (f && d < 14) {
+      const p = f.memoizedProps;
+      const c = p && p.conversation;
+      if (c && typeof c.unreadCount !== 'undefined') {
+        const n = Number(c.unreadCount);
+        return Number.isFinite(n) ? n : null;
+      }
+      f = f.return; d++;
+    }
+    return null;
+  };
   return {
     count: rows.length,
     items: rows.map(el => ({
@@ -1147,6 +1314,7 @@ CONV_JS = r"""
       text: (el.innerText || '').trim().slice(0, 200),
       badge: pick(el, ['[class*="badge"]', '[class*="Badge"]', '[class*="unread"]',
                        '[class*="Unread"]']),
+      unread: unreadOf(el),
       visible: !!(el.offsetWidth || el.offsetHeight)
     }))
   };
@@ -1191,6 +1359,7 @@ async def cmd_conversations(cookie_file: str | None, limit: int, groups_only: bo
                 "kind": kind,
                 "preview": norm(row.get("text") or "")[:120],
                 "unread_hint": norm(row.get("badge") or "")[:20],
+                "unread": row.get("unread"),
             })
             if len(items) >= limit:
                 break
