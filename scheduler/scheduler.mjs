@@ -71,9 +71,10 @@ function inWindow(wins) {
 function readState() {
   const st = readJson(STATE_FILE, {}) || {}
   if (st.date !== today()) {
-    return { date: today(), watches: 0, repliedIds: [], loginFails: 0 }
+    return { date: today(), watches: 0, repliedIds: [], queue: [], loginFails: 0 }
   }
   if (!Array.isArray(st.repliedIds)) st.repliedIds = []
+  if (!Array.isArray(st.queue)) st.queue = []
   return st
 }
 function writeState(st) { writeJson(STATE_FILE, st) }
@@ -81,6 +82,28 @@ function writeState(st) { writeJson(STATE_FILE, st) }
 /** 只保留最近 N 个已回复 id，防止状态文件无限增长 */
 function capRepliedIds(ids, max = 300) {
   return ids.length > max ? ids.slice(-max) : ids
+}
+
+/**
+ * 把本轮看到的内容并进本地队列。
+ *
+ * 为什么需要队列：抖音私信页只渲染十来条，**新消息会把最老的卡片挤出 DOM**。
+ * 主人的视频一多，光靠"当前页面上有什么"就会漏掉还没处理的那些。队列把
+ * 见过的 id 记下来，处理时不再依赖它还留在页面上（抽帧只认 id）。
+ */
+function mergeQueue(queue, items, max = 50) {
+  const seen = new Set(queue.map(q => q.item_id))
+  for (const it of items) {
+    if (!it.item_id || seen.has(it.item_id)) continue
+    seen.add(it.item_id)
+    queue.push({
+      item_id: it.item_id,
+      title: String(it.title || '').slice(0, 140),
+      kind: it.kind === 'video' ? 'video' : 'note',
+      seen_at: new Date().toISOString(),
+    })
+  }
+  return queue.length > max ? queue.slice(-max) : queue
 }
 
 // ── 直接读私信（不走 LLM，零 token）───────────────────────────────────────
@@ -222,32 +245,37 @@ async function tick({ manual = false } = {}) {
     const dm = checkDm(null, ownerNick)
     if (!dm) return
 
-    // 主人发来的内容，按 item_id 去重后取最早一条未回复的
+    // 主人发来的内容 → 先并入本地队列（页面只渲染十来条，老卡片会被挤掉）
     const items = (dm.videos ?? []).filter(v => v.item_id && v.from !== 'me')
+    const queued = mergeQueue(st.queue ?? [], items)
+    if (queued.length !== (st.queue ?? []).length) {
+      writeState({ ...readState(), queue: queued })
+      log(`[tick] 队列新增 ${queued.length - (st.queue ?? []).length} 条（共 ${queued.length}）`)
+    }
     const replied = new Set(st.repliedIds ?? [])
 
     // 图文（aweType=0）暂时取不到帧，直接标记为已处理，免得每轮重试卡住
-    const notes = items.filter(v => v.kind !== 'video' && !replied.has(v.item_id))
+    const notes = queued.filter(q => q.kind !== 'video' && !replied.has(q.item_id))
     if (notes.length) {
-      const newSt = readState()
-      newSt.repliedIds = capRepliedIds([...(newSt.repliedIds ?? []), ...notes.map(n => n.item_id)])
-      writeState(newSt)
+      const cur = readState()
+      cur.repliedIds = capRepliedIds([...(cur.repliedIds ?? []), ...notes.map(n => n.item_id)])
+      writeState(cur)
       notes.forEach(n => replied.add(n.item_id))
       log(`[tick] 跳过 ${notes.length} 条图文（暂不支持取帧）: ${notes.map(n => n.item_id).join(',')}`)
     }
 
-    const pending = items.filter(v => v.kind === 'video' && !replied.has(v.item_id))
+    const pending = queued.filter(q => q.kind === 'video' && !replied.has(q.item_id))
 
     // 没有新视频 → 跳过（零 token）
     if (!pending.length) {
-      if (manual) log(`[tick] 没有待回复的视频（共 ${items.length} 条内容）`)
+      if (manual) log(`[tick] 没有待回复的视频（共 ${queued.length} 条内容）`)
       return
     }
 
     const next = pending[0]
     const meBefore = meTextSet(dm)
     const mem = dmContext(DSH_HOME, ownerNick)
-    log(`[tick] 私信共 ${items.length} 条内容，待回复 ${pending.length} 条 → 处理 ${next.item_id}`
+    log(`[tick] 队列共 ${queued.length} 条，待回复 ${pending.length} 条 → 处理 ${next.item_id}`
       + (mem ? `（记忆 ${mem.total_remembered} 条）` : ''))
 
     const r = await wakeAgent(watchPromptFIFO(dm, ownerNick, next, pending.length, mem), 'watch')
@@ -467,13 +495,15 @@ if (has('--help') || has('-h')) {
   const st = readState()
   const replied = new Set(st.repliedIds ?? [])
   const items = (dm.videos ?? []).filter(v => v.item_id && v.from !== 'me')
+  const queued = mergeQueue(st.queue ?? [], items)
   console.log(JSON.stringify({
     fiber_diag: dm.fiber_diag,
-    total: items.length,
+    visible_now: items.length,
+    queue_total: queued.length,
     already_replied: [...replied],
-    items: items.map(v => ({ id: v.item_id, kind: v.kind, from: v.from, title: (v.title || '').slice(0, 40) })),
-    pending_videos: items.filter(v => v.kind === 'video' && !replied.has(v.item_id)).map(v => v.item_id),
-    notes_to_skip: items.filter(v => v.kind !== 'video' && !replied.has(v.item_id)).map(v => v.item_id),
+    queue: queued.map(q => ({ id: q.item_id, kind: q.kind, title: (q.title || '').slice(0, 40) })),
+    pending_videos: queued.filter(q => q.kind === 'video' && !replied.has(q.item_id)).map(q => q.item_id),
+    notes_to_skip: queued.filter(q => q.kind !== 'video' && !replied.has(q.item_id)).map(q => q.item_id),
   }, null, 2))
   process.exit(0)
 } else if (has('--watch-now')) {
