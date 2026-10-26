@@ -1066,77 +1066,223 @@ VIDEO_URL_RE = re.compile(
     r'https?://(?:www\.douyin\.com/video/|v\.douyin\.com/|www\.iesdouyin\.com/share/video/)\S+'
 )
 
+# 分享卡片的 aweType。普通文字消息上也有 aweType（实测 700），
+# 只有 800 才是视频/图文卡片 —— 不能拿「有没有 awe」判断。
+AWE_TYPE_CARD = 800
+
+# 从 React fiber 里读结构化消息。
+#
+# 抖音前端把解析好的消息对象挂在 `message.parsedContent` 上，里面有
+# itemId（19 位 aweme_id）、aweType、text、content_title。这比在 DOM 里
+# 找 class 名稳定得多，也终于能拿到卡片里那个视频 ID（以前只能截图让
+# 模型用眼睛数）。
+#
+# 发送方判定：**36px 头像落在消息列表左半边还是右半边**。
+# 抖音的 `message.isMyMessage` 恒为 true（连对方发的也是），不能用来判方向；
+# 三层祖先的 class 名也完全一样。同一人连发时只有组里最早那条带头像，
+# 所以没有头像的消息用 `isFromMe` class 兜底（实测两者 100% 一致）。
+# 两边不一致的条数记在 diag.sender_disagree 里，方便前端改版后第一时间发现。
+READ_MESSAGES_JS = r"""
+() => {
+  const fiberKey = (n) => {
+    const ks = Object.keys(n);
+    for (const k of ks) {
+      if (k.indexOf('__reactFiber$') === 0) return k;
+      if (k.indexOf('__reactInternalInstance$') === 0) return k;
+    }
+    return null;
+  };
+  const listNode = document.querySelector('[class*="messageMessageList"]')
+    || document.querySelector('[class*="componentsRightPanel"]') || document.body;
+  const lb = listNode.getBoundingClientRect();
+  const mid = lb.left + lb.width / 2;
+  const nodes = Array.prototype.slice.call(
+    document.querySelectorAll('[class*="messageMessageBox"]'));
+  const out = [];
+  const seen = new WeakSet();
+  let fiberHits = 0, parsedHits = 0, avatarHits = 0, classHits = 0;
+
+  nodes.forEach(function (n) {
+    const fk = fiberKey(n);
+    if (!fk) return;
+    fiberHits++;
+    let f = n[fk], d = 0, found = null;
+    while (f && d < 24) {
+      const p = f.memoizedProps;
+      if (p && p.message && typeof p.message === 'object' && p.message.parsedContent) {
+        found = p.message;
+        break;
+      }
+      f = f.return; d++;
+    }
+    if (!found) return;
+    if (seen.has(found)) return;
+    seen.add(found);
+    parsedHits++;
+
+    const pc = found.parsedContent || {};
+    const r = n.getBoundingClientRect();
+    let side = '';
+    const imgs = Array.prototype.slice.call(n.querySelectorAll('img')).filter(function (img) {
+      const b = img.getBoundingClientRect();
+      if (b.width < 28 || b.width > 48) return false;
+      if (Math.abs(b.width - b.height) > 6) return false;
+      const cy = b.top + b.height / 2;
+      return cy >= r.top - 2 && cy <= r.bottom + 2;
+    });
+    if (imgs.length) {
+      const ib = imgs[0].getBoundingClientRect();
+      side = ((ib.left + ib.width / 2) < mid) ? 'them' : 'me';
+      avatarHits++;
+    }
+    const clsMe = !!n.querySelector('[class*="isFromMe"]')
+      || /isFromMe/.test(String(n.className || ''));
+    if (clsMe) classHits++;
+
+    out.push({
+      own: side,
+      cls_me: clsMe,
+      text: String(pc.text || pc.content_title || '').replace(/\s+/g, ' ').trim(),
+      title: String(pc.content_title || '').trim(),
+      awe: Number(pc.aweType) || 0,
+      item: pc.itemId ? String(pc.itemId) : '',
+      type: String(pc.type || ''),
+      ts: Number(pc.createdAt) || 0,
+    });
+  });
+
+  // 抖音的 messageList 有时是 column-reverse（DOM 新→旧），有时是旧→新，
+  // 不能写死方向。用 createdAt 判断，拿不到时间戳就按 DOM 原样。
+  let domNewestFirst = false;
+  if (out.length >= 2) {
+    const t0 = out[0].ts, t1 = out[out.length - 1].ts;
+    if (t0 && t1) domNewestFirst = t0 > t1;
+  }
+  const chrono = domNewestFirst ? out.slice().reverse() : out;
+
+  // 发送方：头像左右最可靠；没有头像时用 isFromMe class 兜底
+  // （实测两者 100% 一致；class 兜底能救「最新一条还没渲染出头像」的情况）。
+  chrono.forEach(function (m) {
+    m.from = m.own || (m.cls_me ? 'me' : 'them');
+    m.sender_basis = m.own ? 'avatar' : 'class';
+  });
+
+  return {
+    messages: chrono,
+    diag: {
+      nodes: nodes.length,
+      fiber_hits: fiberHits,
+      parsed_hits: parsedHits,
+      avatar_hits: avatarHits,
+      class_me_hits: classHits,
+      dom_newest_first: domNewestFirst,
+      sender_disagree: chrono.filter(function (m) {
+        return m.own && (m.cls_me !== (m.own === 'me'));
+      }).length,
+    },
+  };
+}
+"""
+
+
+def _fallback_text_lines(chat_text: str) -> list[str]:
+    """fiber 读不到时的兜底：按行切纯文本。"""
+    out = []
+    for line in chat_text.split("\n"):
+        line = line.strip()
+        if not line: continue
+        if any(noise in line for noise in NOISE_PATTERNS): continue
+        if re.match(r'^[\d:分钟前小时天月年刚\s]+$', line): continue
+        if line in ("搜索", "取消"): continue
+        if len(line) < 2: continue
+        out.append(line)
+    return out
+
 
 async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dict:
-    """打开与 target 的会话，读消息 + 截图 + 尽力提取视频 ID。"""
-    proto_bodies: list[bytes] = []
+    """打开与 target 的会话，读消息（优先 React fiber，DOM 文本兜底）。"""
     async with open_browser(cookie_file) as page:
-        async def _on_response(response):
-            if any(k in response.url for k in ["get_message_by_init", "get_user_message"]):
-                try:
-                    proto_bodies.append(await response.body())
-                except Exception:
-                    pass
-        page.on("response", _on_response)
-
         await ensure_chat_page(page)
         title = await open_conversation(page, target)
         await page.wait_for_timeout(3000)
 
-        # 截图（给 agent 看视频卡片长什么样）
+        # 截图保留：agent 仍可用它核对卡片长什么样
         shot = await screenshot(page, target + "_read")
 
-        # DOM 文本
-        chat_text = ""
-        for area_sel in CHAT_AREA:
-            loc = page.locator(area_sel).first
-            try:
-                if await loc.count():
-                    chat_text = await loc.inner_text(timeout=5000)
-                    break
-            except Exception:
-                continue
-        if not chat_text:
-            chat_text = await page.inner_text("body")
+        raw: dict = {}
+        try:
+            raw = await page.evaluate(READ_MESSAGES_JS) or {}
+        except Exception as exc:  # 前端改版 / fiber 结构变了
+            raw = {"messages": [], "diag": {"error": str(exc)[:200]}}
+        diag = raw.get("diag") or {}
+        raw_msgs = raw.get("messages") or []
 
-        lines = [l.strip() for l in chat_text.split("\n") if l.strip()]
+        # 兜底：fiber 一条都没读到 → 退回纯文本
+        fallback_lines: list[str] = []
+        if not raw_msgs:
+            chat_text = ""
+            for area_sel in CHAT_AREA:
+                loc = page.locator(area_sel).first
+                try:
+                    if await loc.count():
+                        chat_text = await loc.inner_text(timeout=5000)
+                        break
+                except Exception:
+                    continue
+            if not chat_text:
+                chat_text = await page.inner_text("body")
+            fallback_lines = _fallback_text_lines(chat_text)
+
+        raw_msgs = raw_msgs[-limit:]
         messages = []
-        for line in lines:
-            if any(noise in line for noise in NOISE_PATTERNS): continue
-            if re.match(r'^[\d:分钟前小时天月年刚\s]+$', line): continue
-            if line in ("搜索", "取消"): continue
-            if len(line) < 2: continue
-            messages.append(line)
-        messages = messages[-limit:]
+        for m in raw_msgs:
+            awe = int(m.get("awe") or 0)
+            item_id = m.get("item") or ""
+            # aweType: 800 = 视频卡片；0 但带 itemId = 图文；700 = 普通文字
+            if awe == AWE_TYPE_CARD:
+                kind = "video"
+            elif item_id:
+                kind = "note"
+            else:
+                kind = "text"
+            messages.append({
+                "from": m.get("from") or "unknown",
+                "text": m.get("text") or "",
+                "kind": kind,
+                "awe": awe,
+                "item_id": item_id,
+                "title": m.get("title") or "",
+                "sender_basis": m.get("sender_basis") or "",
+            })
 
-        # 文本 URL
+        # 主人发来的内容（视频 + 图文）：只要带 itemId 就算一条，旧 → 新
+        videos = [{
+            "item_id": m["item_id"],
+            "title": m["title"] or m["text"],
+            "kind": m["kind"],
+            "from": m["from"],
+        } for m in messages if m["item_id"]]
+
+        # 文本链接（老路径兜底）
         text_video_urls = []
-        full_text = "\n".join(messages)
+        full_text = ("\n".join(m["text"] for m in messages)
+                     if messages else "\n".join(fallback_lines))
         for match in VIDEO_URL_RE.finditer(full_text):
             url = match.group(0).rstrip(".,;:)】」")
             if url not in text_video_urls:
                 text_video_urls.append(url)
 
-        # 视频卡片的作者名（DOM 可见文本）
-        card_authors = []
-        card_els = page.locator('[class*="MessageItemShareAwemeauthorName"]')
-        n = await card_els.count()
-        for i in range(min(n, 10)):
-            try:
-                name = await card_els.nth(i).inner_text(timeout=1000)
-                if name.strip():
-                    card_authors.append(name.strip())
-            except:
-                pass
-
         return {
             "target": target,
             "resolved_title": title,
             "screenshot": shot,
-            "message_count": len(messages),
-            "messages": messages,
+            "message_count": len(messages) or len(fallback_lines),
+            "messages": messages or fallback_lines,
+            "videos": videos,
             "video_urls": text_video_urls,
-            "card_authors": card_authors,
+            # 兼容旧调用方：卡片数量 = videos 条数
+            "card_authors": [v["title"] for v in videos],
+            "fiber_diag": diag,
         }
     return {}
 
