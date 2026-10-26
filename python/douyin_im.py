@@ -1109,6 +1109,204 @@ async def cmd_group_send(cookie_file: str | None, group: str, text: str, do_send
 
 
 # --------------------------------------------------------------------------
+# 分享视频卡片（走抖音自己的「分享给朋友」，不是发链接）
+# --------------------------------------------------------------------------
+
+SHARE_ICON = '[data-e2e="video-share-icon-container"]'
+SHARE_PANEL = '[data-e2e="video-share-container"]'
+
+# 在分享面板里找目标那一行。
+# 昵称会重名 ⇒ 同时返回 fiber 里的 sec_uid，调用方可以按稳定 id 精确匹配。
+_FIND_SHARE_ROW_JS = r"""
+([who, toId]) => {
+  const sc = document.querySelector('[data-e2e="video-share-container"]');
+  if (!sc) return { err: 'no-panel' };
+  const secOf = (node) => {
+    const fk = Object.keys(node).find(k => k.indexOf('__reactFiber$') === 0
+      || k.indexOf('__reactInternalInstance$') === 0);
+    if (!fk) return '';
+    let f = node[fk], d = 0;
+    while (f && d < 14) {
+      const p = f.memoizedProps;
+      if (p && typeof p === 'object') {
+        for (const k in p) {
+          const v = p[k];
+          if (v && typeof v === 'object' && v.sec_uid) return String(v.sec_uid);
+        }
+      }
+      f = f.return; d++;
+    }
+    return '';
+  };
+  const nodes = Array.from(sc.querySelectorAll('div,span,p'))
+    .filter(e => (e.innerText || '').trim() === who)
+    .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+  if (!nodes.length) {
+    return { err: 'no-name',
+             panel: (sc.innerText || '').replace(/\s+/g, ' ').slice(0, 240) };
+  }
+  const out = [];
+  for (const nameNode of nodes) {
+    let row = nameNode;
+    for (let i = 0; i < 6 && row; i++) {
+      const btns = Array.from(row.querySelectorAll('div,span,button'))
+        .filter(e => (e.innerText || '').trim() === '分享');
+      if (btns.length) {
+        const b = btns[0], r = b.getBoundingClientRect();
+        if (r.width > 16 && r.height > 12) {
+          out.push({
+            sec_uid: secOf(row) || secOf(nameNode),
+            btn: { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) },
+          });
+        }
+        break;
+      }
+      row = row.parentElement;
+    }
+  }
+  const seen = new Set(), uniq = [];
+  for (const o of out) {
+    const k = o.sec_uid || (o.btn.x + ',' + o.btn.y);
+    if (seen.has(k)) continue;
+    seen.add(k); uniq.push(o);
+  }
+  if (toId) {
+    const hit = uniq.filter(o => o.sec_uid === toId);
+    if (!hit.length) {
+      return { err: 'to-id-missing', to_id: toId, candidates: uniq,
+               panel: (sc.innerText || '').replace(/\s+/g, ' ').slice(0, 240) };
+    }
+    return { candidates: hit };
+  }
+  return { candidates: uniq };
+}
+"""
+
+
+async def _hover_with_motion(page, x: float, y: float, steps: int = 8) -> None:
+    """按真实轨迹把鼠标移到 (x, y)。
+
+    分享图标挂的是 onMouseEnter / onFocus，没有 onClick —— `el.click()`
+    打不开面板，必须真的让指针走过去。
+    """
+    await page.mouse.move(20, 20)
+    await page.wait_for_timeout(250)
+    for i in range(1, steps + 1):
+        await page.mouse.move(20 + (x - 20) * i / steps, 20 + (y - 20) * i / steps)
+        await page.wait_for_timeout(70)
+    await page.mouse.move(x, y)
+    await page.wait_for_timeout(2000)
+
+
+async def cmd_share(cookie_file: str | None, aweme_id: str, target: str, do_send: bool,
+                    want_shot: bool, to_id: str = "") -> dict:
+    """把视频以**原生分享卡片**发给 target（不是文本链接）。
+
+    文本链接在抖音里点不开，而且私信带 URL 会被吞成空气泡；卡片是前端把
+    结构化消息交给服务端生成的，只有走分享面板这一条路。
+    """
+    aweme_id = str(aweme_id or "").strip()
+    if not re.fullmatch(r"\d{15,25}", aweme_id):
+        raise IMError("BAD_INPUT", f"aweme_id 不合法：{aweme_id!r}")
+    if not target:
+        raise IMError("BAD_INPUT", "target 不能为空")
+
+    async with open_browser(cookie_file) as page:
+        await page.goto(f"https://www.douyin.com/video/{aweme_id}",
+                        wait_until="domcontentloaded", timeout=60_000)
+        await page.wait_for_timeout(7_000)
+
+        icon = page.locator(SHARE_ICON).first
+        if not await icon.count():
+            raise IMError("NO_SHARE_ICON", "视频页没加载出分享图标（可能未登录或页面没准备好）")
+        box = await icon.bounding_box()
+        if not box:
+            raise IMError("NO_SHARE_ICON", "分享图标不可见")
+        await _hover_with_motion(page, box["x"] + box["width"] / 2,
+                                 box["y"] + box["height"] / 2)
+
+        panel = page.locator(SHARE_PANEL).first
+        if not await panel.count():
+            raise IMError("NO_PANEL", "分享面板没展开（hover 没触发）")
+
+        found = await page.evaluate(_FIND_SHARE_ROW_JS, [target, to_id or ""])
+        if found.get("err") == "no-panel":
+            raise IMError("NO_PANEL", "分享面板消失了")
+        if found.get("err") == "no-name":
+            raise IMError(
+                "TARGET_NOT_IN_PANEL",
+                f"分享面板里没有「{target}」。面板只列**最近分享过的人**——"
+                f"先在手机上或网页里手动分享一次给 TA，之后才会出现在这里。"
+                f"面板当前内容：{found.get('panel', '')[:160]}")
+        if found.get("err") == "to-id-missing":
+            raise IMError(
+                "TARGET_ID_MISMATCH",
+                f"面板里有同名的「{target}」，但没有 sec_uid={to_id} 那个")
+
+        cands = found.get("candidates") or []
+        if not cands:
+            raise IMError("TARGET_NOT_IN_PANEL", f"没在「{target}」那一行找到「分享」按钮")
+        if len(cands) > 1:
+            raise IMError(
+                "AMBIGUOUS",
+                f"分享面板里有 {len(cands)} 个「{target}」，不敢猜（猜错就是发给陌生人）；"
+                f"请用 --to-id 指定 sec_uid")
+
+        btn = cands[0]["btn"]
+        result = {
+            "aweme_id": aweme_id,
+            "target": target,
+            "to_sec_uid": cands[0].get("sec_uid") or to_id or "",
+            "button": btn,
+            "dry_run": not do_send,
+            "sent": False,
+        }
+        if not do_send:
+            result["panel"] = (await panel.inner_text())[:200] if await panel.count() else ""
+            if want_shot:
+                result["screenshot"] = await screenshot(page, target + "_share_dry")
+            return result
+
+        await page.mouse.click(btn["x"], btn["y"])
+        await page.wait_for_timeout(2500)
+
+        # 回读：卡片必须出现在「我发的」消息里，且 item_id 一致
+        readback = await confirm_share(page, target, aweme_id)
+        result["readback"] = readback
+        result["sent"] = bool(readback.get("found"))
+        if want_shot:
+            result["screenshot"] = await screenshot(page, target + "_share_sent")
+        if not result["sent"]:
+            raise IMError(
+                "SHARE_UNCONFIRMED",
+                "已点击分享，但回读没在「我发的」消息里找到这张卡片；"
+                "请人工核实，勿自动重试")
+        return result
+    return {}
+
+
+async def confirm_share(page, target: str, aweme_id: str) -> dict:
+    """回读确认卡片真的发到了对方会话里（aweType=800 + item_id 相同）。"""
+    try:
+        await page.goto(CHAT_URL, wait_until="domcontentloaded", timeout=45_000)
+        await page.wait_for_timeout(2500)
+        await open_conversation(page, target)
+        await page.wait_for_timeout(2500)
+        msgs = await read_messages(page)
+        if msgs is None:
+            return {"found": False, "reason": "fiber 不可用，无法回读"}
+        cards = [
+            m for m in msgs
+            if m.get("from") == "me"
+            and int(m.get("awe") or 0) == AWE_TYPE_CARD
+            and str(m.get("item") or "") == str(aweme_id)
+        ]
+        return {"found": bool(cards), "matching_cards": len(cards)}
+    except Exception as exc:
+        return {"found": False, "reason": str(exc)[:160]}
+
+
+# --------------------------------------------------------------------------
 # 读私信（提取主人发来的视频链接 / 指令）
 # --------------------------------------------------------------------------
 
@@ -1482,6 +1680,15 @@ def main(argv=None) -> int:
     p_read.add_argument("--from", dest="from_nick", required=True, help="对方昵称")
     p_read.add_argument("--limit", type=int, default=20)
 
+    p_share = sub.add_parser("share", help="把视频以原生分享卡片发给某人")
+    p_share.add_argument("--aweme", required=True, help="视频 ID（15-25 位数字）")
+    p_share.add_argument("--to", required=True, help="对方昵称")
+    p_share.add_argument("--to-id", dest="to_id", default="",
+                         help="对方 sec_uid（昵称重名时必填）")
+    p_share.add_argument("--send", action="store_true",
+                         help="真实发送（另需 DOUYIN_IM_ALLOW_SEND=1）")
+    p_share.add_argument("--screenshot", action="store_true", default=True)
+
     args = ap.parse_args(argv)
 
     do_send = bool(getattr(args, "send", False))
@@ -1529,6 +1736,9 @@ def main(argv=None) -> int:
                 return await cmd_group_send(cookie_file, args.group, args.text, do_send, True)
             if args.cmd == "read":
                 return await cmd_read(cookie_file, args.from_nick, args.limit)
+            if args.cmd == "share":
+                return await cmd_share(cookie_file, args.aweme, args.to, do_send, True,
+                                       getattr(args, "to_id", "") or "")
             raise IMError("BAD_CMD", "unknown command")
 
         data = asyncio.run(asyncio.wait_for(run(), timeout=150))

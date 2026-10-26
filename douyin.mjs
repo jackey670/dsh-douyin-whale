@@ -59,6 +59,7 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   profile <sec_uid|主页链接>                  用户主页
   watch <关键词> [--count N] [--n N]         选一条没看过的视频并抽帧
   send --to <昵称> --text <文字> [--send]     私信（默认 dry-run）
+  share --aweme <ID> --to <昵称> [--send]    把视频以原生分享卡片发给对方
   read-dm --from <昵称> [--limit N]          读私信（提取视频链接）
   help                                      显示本说明
 
@@ -70,6 +71,8 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   --out FILE       把本次 watch 结果写到指定 JSON 文件
   --to NICK        私信目标昵称（需完全一致）
   --text TEXT      私信内容（≤500 字）
+  --aweme ID       视频 ID（share 用）
+  --to-id SEC_UID  对方 sec_uid（share 时昵称重名才需要）
   --send           真发（需要 DOUYIN_IM_ALLOW_SEND=1 环境变量）
   --no-start       不自动启动本地 HTTP API
   --base-url URL   指定 HTTP API 地址
@@ -266,6 +269,35 @@ async function run() {
       if (reallySend) args.push('--send');
 
       const result = spawnSync(py, args, { env, timeout: 180_000, encoding: 'utf8', windowsHide: true });
+      let payload;
+      try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
+      catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
+      ok(payload);
+      if (!payload.ok) process.exitCode = 1;
+      return;
+    }
+    case 'share': {
+      const aweme = extractId(options.aweme) || '';
+      const to = options.to;
+      if (!aweme) return fail('share 需要 --aweme <视频ID>');
+      if (!to) return fail('share 需要 --to <昵称>');
+      const reallySend = options.send === true;
+
+      const { spawnSync } = await import('node:child_process');
+      const py = findImPython();
+      const imScript = path.join(ROOT, 'python', 'douyin_im.py');
+      const env = {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        DOUYIN_DATA_DIR: DATA_DIR,
+        DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
+      };
+      const args = [imScript, 'share', '--aweme', aweme, '--to', to];
+      if (options['to-id']) args.push('--to-id', String(options['to-id']));
+      if (reallySend) args.push('--send');
+
+      const result = spawnSync(py, args, { env, timeout: 300_000, encoding: 'utf8', windowsHide: true });
       let payload;
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
