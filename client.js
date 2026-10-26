@@ -20,7 +20,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 1;
+    const PANEL_BUILD = 2;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -110,6 +110,7 @@ window.__ModuleLoader__.load({
     function Panel() {
       const [data, setData] = useState(null);
       const [logLines, setLogLines] = useState(null);
+      const [login, setLogin] = useState(null);
       const [busy, setBusy] = useState('');
       const [msg, setMsg] = useState('');
       const [nick, setNick] = useState('');
@@ -122,8 +123,11 @@ window.__ModuleLoader__.load({
       const load = useCallback(async () => {
         setBusy('load');
         try {
-          const s = await jget('/status');
+          const [s, q, c, l] = await Promise.all([
+            jget('/status'), jget('/queue'), jget('/config'), jget('/login/status'),
+          ]);
           setData(s);
+          setLogin(l);
           setNick(s.owner || '');
           setIntervalMin(s.watch?.intervalMinutes ?? 10);
           setDailyMax(s.watch?.dailyMax ?? 60);
@@ -140,6 +144,27 @@ window.__ModuleLoader__.load({
       }, []);
 
       useEffect(() => { load(); }, [load]);
+
+      const loadLogin = useCallback(async () => {
+        try {
+          setLogin(await jget('/login/status'));
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        }
+      }, []);
+
+      const loginAct = useCallback(async (action) => {
+        setBusy('login');
+        try {
+          await jpost(`/login/${action}`);
+          setLogin(await jget('/login/status'));
+          setMsg('已发起扫码 —— 打开上面的 PNG 图片用手机扫；出现滑块只能人工处理');
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setBusy('');
+        }
+      }, []);
 
       const loadLog = useCallback(async () => {
         setBusy('log');
@@ -296,6 +321,43 @@ window.__ModuleLoader__.load({
                   h('div', { 'data-dy2-kv': '' }, (it.title || '(无标题)').slice(0, 70)),
                   h('div', { 'data-dy2-sub': '' },
                     `${it.kind === 'note' ? '图文' : '视频'} · ${it.item_id} · 见于 ${fmtWhen(it.seen_at)}`)))))),
+
+        /* ── 登录 ── */
+        h('div', { 'data-dy2-card': '' },
+          h('div', { 'data-dy2-title': '' }, '登录',
+            login
+              ? h('span', {
+                'data-dy2-badge': login.logged_in ? 'data-ok'
+                  : login.phase === 'failed' ? 'data-err' : 'data-warn',
+              }, login.logged_in ? '已登录'
+                : login.phase === 'failed' ? '上次失败'
+                  : login.phase === 'qr' ? '等待扫码'
+                    : login.phase === 'starting' ? '启动中…' : '未登录')
+              : null),
+          h('div', { 'data-dy2-sub': '' },
+            '掉登录是正常的（抖音会在服务端作废旧会话）。点「出二维码」，然后打开'
+            + '下面给出的 PNG 图片用手机抖音扫；如果出现滑块/短信验证，只能人工完成。'),
+          h('div', { 'data-dy2-row': '' },
+            h('button', {
+              'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
+              onClick: () => loginAct('qr'),
+            }, login?.phase === 'qr' || login?.running ? '重新出二维码' : '出二维码'),
+            h('button', {
+              'data-dy2-btn': '', disabled: Boolean(busy),
+              onClick: () => loadLogin(),
+            }, '刷新状态')),
+          login?.qr
+            ? h('div', { 'data-dy2-kv': '' },
+              '二维码图片：', h('span', null, login.qr),
+              h('div', { 'data-dy2-sub': '' }, '用手机抖音「扫一扫」打开这张图片即可'))
+            : null,
+          login?.captcha
+            ? h('div', { 'data-dy2-badge': 'data-err' },
+              '抖音要求滑块/短信验证 —— 项目不会绕过验证码，请人工处理或稍后再试')
+            : null,
+          login?.hint
+            ? h('div', { 'data-dy2-sub': '' }, login.hint)
+            : null),
 
         /* ── 日志 ── */
         h('div', { 'data-dy2-card': '' },

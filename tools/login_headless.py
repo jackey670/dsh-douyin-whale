@@ -86,17 +86,41 @@ async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--timeout", type=int, default=300)
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "im-shots", "login-qr.png"))
+    ap.add_argument("--status-file", dest="status_file", default="",
+                    help="把阶段状态（qr/waiting/ok/failed）写进这个 JSON，给面板轮询用")
     args = ap.parse_args()
+
+    status_file = os.path.abspath(args.status_file) if args.status_file else ""
+
+    def put_status(patch: dict) -> None:
+        """把当前阶段**合并**进状态文件（面板写的 running_pid 不能丢）。"""
+        if not status_file:
+            return
+        try:
+            os.makedirs(os.path.dirname(status_file), exist_ok=True)
+            cur = {}
+            try:
+                with open(status_file, encoding="utf-8") as fh:
+                    cur = json.load(fh) or {}
+            except Exception:
+                cur = {}
+            cur.update(patch)
+            with open(status_file, "w", encoding="utf-8") as fh:
+                json.dump(cur, fh, ensure_ascii=False)
+        except Exception:
+            pass
 
     out_path = os.path.abspath(args.out)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     result = {"ok": False, "qr": "", "already_logged_in": False, "profile": D.PROFILE_DIR}
+    put_status({"phase": "starting", "qr": "", "ok": None})
 
     async with D.open_browser(None) as page:
         ctx = page.context
         if await session_actually_works(page):
             result.update(ok=True, already_logged_in=True,
                           hint="这个 profile 里的登录态还能用，不用扫码")
+            put_status({"phase": "ok", "ok": True, "already_logged_in": True, "qr": ""})
         else:
             # 会话被服务端作废了，但 sessionid 还躺在 profile 里。清掉它们，
             # 否则后面的轮询会把这条**死 cookie** 当成「刚登录成功」。
@@ -123,6 +147,8 @@ async def main() -> int:
 
             await page.screenshot(path=out_path, full_page=False)
             result.update(qr=out_path, click=clicked, qr_ready=bool(ready.get("qr_text")))
+            put_status({"phase": "qr", "qr": out_path, "qr_ready": result["qr_ready"],
+                        "captcha": bool(ready.get("captcha")), "ok": None})
             # 先把二维码路径打出来，调用方不用等超时才知道文件在哪
             print(json.dumps({"phase": "qr", "qr": out_path,
                               "qr_ready": result["qr_ready"]}, ensure_ascii=False), flush=True)
@@ -151,6 +177,8 @@ async def main() -> int:
                 result["hint"] = ("没等到登录态。二维码可能过期了，重跑一次；"
                                   "如果扫完卡在短信/滑块，那是要你去手机端完成验证")
 
+    put_status({"phase": "ok" if result.get("ok") else "failed", "ok": bool(result.get("ok")),
+                "qr": result.get("qr") or "", "hint": result.get("hint") or ""})
     print(json.dumps(result, ensure_ascii=False))
     return 0 if result.get("ok") else 2
 
