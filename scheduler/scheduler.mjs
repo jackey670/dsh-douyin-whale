@@ -28,7 +28,6 @@ const AGENT_DIR = path.join(HERE, 'agent')
 const STATE_FILE = path.join(DSH_HOME, 'douyin-whale-state.json')
 const LOG_FILE = path.join(DSH_HOME, 'douyin-whale-scheduler.log')
 const PID_FILE = path.join(DSH_HOME, 'douyin-whale-scheduler.pid')
-const TICK_MS = 60_000
 const DENY_FILE = path.join(HERE, 'tools-deny.txt')
 
 const D = `node "${path.join(ROOT, 'douyin.mjs').replace(/\\/g, '/')}"`
@@ -382,7 +381,17 @@ function startDaemon() {
     }
   } catch (e) { log(`HTTP API 预启动失败: ${e.message}`) }
 
-  setInterval(() => { tick().catch(e => log(`[tick] 异常: ${e.message}`)) }, TICK_MS)
+  // 按配置的间隔跑（以前写死 60 秒：待回复多条时会一分钟连发好几条，容易触发风控）。
+  // 用自调度 setTimeout 而不是 setInterval，这样一轮跑得比间隔久也不会叠起来。
+  const runOnce = async () => {
+    try { await tick() } catch (e) { log(`[tick] 异常: ${e.message}`) }
+  }
+  const scheduleLoop = () => {
+    const mins = Math.max(1, Number(readConfig().watch?.intervalMinutes ?? 10) || 10)
+    setTimeout(async () => { await runOnce(); scheduleLoop() }, mins * 60_000)
+  }
+  // 启动后先跑一次，之后按间隔
+  setTimeout(async () => { await runOnce(); scheduleLoop() }, 15_000)
   console.log(`douyin-whale 调度器已启动（PID ${process.pid}）`)
 }
 
