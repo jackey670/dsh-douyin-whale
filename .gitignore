@@ -37,3 +37,7 @@ seen.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# ── 面板预览（本地验证用）─────────────────────────────────────────
+tools/panel-preview/vendor/
+data/panel-preview-home/

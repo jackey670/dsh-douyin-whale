@@ -205,6 +205,23 @@ node scheduler/scheduler.mjs --watch-now
 | POST | `/scheduler/stop` | 停止调度器 |
 | GET | `/gate`、`/memory` | 发送闸剩余冷却 / 记忆占用 |
 
+### 不装 DSH 先看面板
+
+`tools/panel-preview/server.mjs` 伪造宿主的三样东西（`__ModuleLoader__`、
+`require('react')`、假 slots），`/api/*` 挂的就是真实的路由实现：
+
+```bash
+npm run preview          # 打开 http://127.0.0.1:7701
+```
+
+数据目录是 `data/panel-preview-home/`（首次启动自动写入样例队列和日志），
+在这里随便点都不会影响真实调度器。React UMD 放在 `tools/panel-preview/vendor/`
+（gitignored，从 npmmirror 下载）。
+
+```bash
+npm test                 # 47 项离线断言：安全 / 回读 / 发送闸 / 记忆 / 面板状态 / API 路由
+```
+
 ## 环境要求
 
 | 项 | 要求 | 备注 |
@@ -595,6 +612,8 @@ dsh-douyin-whale/
 ├── tools/
 │   ├── export_login_state.py    # 有头扫码登录 → 写入持久化 profile
 │   ├── login_headless.py        # 无头出二维码（截图给人扫）
+│   ├── run-py.mjs               # npm scripts 里选 .venv 的 Python
+│   ├── panel-preview/           # 不装 DSH 的本地面板预览（模拟宿主）
 │   └── probe_im.py              # DOM 探测（前端改版后对照选择器）
 ├── tests/
 │   ├── fixture_chat.html        # 私信 DOM 仿真页
