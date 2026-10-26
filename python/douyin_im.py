@@ -1175,7 +1175,7 @@ READ_MESSAGES_JS = r"""
     document.querySelectorAll('[class*="messageMessageBox"]'));
   const out = [];
   const seen = new WeakSet();
-  let fiberHits = 0, parsedHits = 0, avatarHits = 0, classHits = 0;
+  let fiberHits = 0, parsedHits = 0, avatarHits = 0, classHits = 0, systemHits = 0;
 
   nodes.forEach(function (n) {
     const fk = fiberKey(n);
@@ -1196,6 +1196,10 @@ READ_MESSAGES_JS = r"""
     parsedHits++;
 
     const pc = found.parsedContent || {};
+    // 系统消息（「获得火花见面礼」之类）：不是谁说的话，不能当成聊天内容。
+    // 它们的 text 是空的，混进来会被误判成「我发的空消息」。
+    if (String(pc.is_system_type) === 'true') { systemHits++; return; }
+
     const r = n.getBoundingClientRect();
     let side = '';
     const imgs = Array.prototype.slice.call(n.querySelectorAll('img')).filter(function (img) {
@@ -1222,16 +1226,16 @@ READ_MESSAGES_JS = r"""
       awe: Number(pc.aweType) || 0,
       item: pc.itemId ? String(pc.itemId) : '',
       type: String(pc.type || ''),
-      ts: Number(pc.createdAt) || 0,
+      top: Math.round(r.top),
     });
   });
 
-  // 抖音的 messageList 有时是 column-reverse（DOM 新→旧），有时是旧→新，
-  // 不能写死方向。用 createdAt 判断，拿不到时间戳就按 DOM 原样。
-  let domNewestFirst = false;
+  // 顺序：parsedContent 里没有时间戳（实测只有 aweType/text/richTextInfos），
+  // 所以直接用几何位置判断——DOM 第一个节点在屏幕上更靠下，就说明它是更新的。
+  // 不依赖 flex-direction（实测父容器是 row，看不出来）。
+  let domNewestFirst = true;
   if (out.length >= 2) {
-    const t0 = out[0].ts, t1 = out[out.length - 1].ts;
-    if (t0 && t1) domNewestFirst = t0 > t1;
+    domNewestFirst = out[0].top >= out[out.length - 1].top;
   }
   const chrono = domNewestFirst ? out.slice().reverse() : out;
 
@@ -1250,6 +1254,7 @@ READ_MESSAGES_JS = r"""
       parsed_hits: parsedHits,
       avatar_hits: avatarHits,
       class_me_hits: classHits,
+      system_hits: systemHits,
       dom_newest_first: domNewestFirst,
       sender_disagree: chrono.filter(function (m) {
         return m.own && (m.cls_me !== (m.own === 'me'));
@@ -1383,7 +1388,6 @@ async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dic
                 "item_id": item_id,
                 "title": m.get("title") or "",
                 "sender_basis": m.get("sender_basis") or "",
-                "ts": int(m.get("ts") or 0),
             })
 
         # 主人发来的内容（视频 + 图文）：只要带 itemId 就算一条，旧 → 新

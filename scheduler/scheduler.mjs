@@ -183,12 +183,21 @@ function personaLine() {
   return `［身份］你是${cfg.persona?.name ?? '大肥鱼'}，对用户称「${cfg.persona?.ownerTitle ?? '主人'}」。自称「本鱼/我/本小姐」。语气轻松俏皮。`
 }
 
-/** 数「我发的」消息条数。fiber 读不到时 messages 是纯文本数组，这里返回 null。 */
-function countMeMessages(dm) {
+/** 「我发的」消息正文集合。
+ *  不能用条数比：老消息会滚出 DOM，条数可能一进一出正好不变（实测 3→3）。
+ *  用集合差——只要多出一条以前没见过的正文，就是真的发出去了。 */
+function meTextSet(dm) {
   const msgs = Array.isArray(dm?.messages) ? dm.messages : []
   const objs = msgs.filter(m => m && typeof m === 'object')
+  // 一条结构化消息都没有 ⇒ fiber 读不到，无法判断（返回 null）
   if (!objs.length) return null
-  return objs.filter(m => m.from === 'me').length
+  const set = new Set()
+  for (const m of objs) {
+    if (m.from !== 'me') continue
+    const t = String(m.text || '').replace(/\s+/g, ' ').trim()
+    if (t) set.add(t)
+  }
+  return set
 }
 
 // ── tick ────────────────────────────────────────────────────────────────────
@@ -236,27 +245,30 @@ async function tick({ manual = false } = {}) {
     }
 
     const next = pending[0]
-    const meBefore = countMeMessages(dm)
+    const meBefore = meTextSet(dm)
     log(`[tick] 私信共 ${items.length} 条内容，待回复 ${pending.length} 条 → 处理 ${next.item_id}`)
 
     const r = await wakeAgent(watchPromptFIFO(dm, ownerNick, next, pending.length), 'watch')
 
     if (r.ok) {
       // ⚠️ agent 跑完 ≠ 私信发出去了。它会写日记、会报告「登录态过期」，
-      //    这些都算 r.ok。必须回读一次私信，确认「我发的」消息真的多了一条。
+      //    这些都算 r.ok。必须回读一次私信，确认「我发的」真的多了一条新正文。
       const after = meBefore === null ? null : checkDm(null, ownerNick)
-      const meAfter = after ? countMeMessages(after) : null
-      const delivered = meBefore !== null && meAfter !== null && meAfter > meBefore
+      const meAfter = after ? meTextSet(after) : null
+      const fresh = (meBefore && meAfter)
+        ? [...meAfter].filter(t => !meBefore.has(t))
+        : []
+      const delivered = fresh.length > 0
 
       if (delivered) {
         const newSt = readState()
         newSt.repliedIds = capRepliedIds([...(newSt.repliedIds ?? []), next.item_id])
         newSt.watches = (newSt.watches ?? 0) + 1
         writeState(newSt)
-        log(`[tick] ${next.item_id} 已确认送达（我发的消息 ${meBefore}→${meAfter}），剩余 ${pending.length - 1} 条`)
+        log(`[tick] ${next.item_id} 已确认送达（新消息：${fresh[0].slice(0, 30)}…），剩余 ${pending.length - 1} 条`)
       } else {
         log(`[tick] ⚠️ ${next.item_id} agent 已跑完但没确认到新私信`
-          + `（我发的消息 ${meBefore ?? '未知'}→${meAfter ?? '读取失败'}），不标记，下轮重试`)
+          + `（回读${meAfter === null ? '失败' : '无新增'}），不标记，下轮重试`)
       }
 
       // 登录失效检测
