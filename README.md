@@ -1,6 +1,6 @@
 # dsh-douyin-whale
 
-大肥鱼的抖音工具层：把热榜、搜索、视频内容理解、私信/群聊接入 DSH，另附一个可独立调用的本地 HTTP API。
+大肥鱼的抖音工具层：把热榜、搜索、视频内容理解、私信/群聊接入 DSH，另附一个可独立调用的本地 HTTP API，以及一个「主人发视频 → 大肥鱼看完写日记 → 私信回复」的定时调度器。
 
 <p>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
@@ -15,9 +15,11 @@
 
 A Douyin toolkit for Dafeiyu (大肥鱼) and DeepSeek Harness (DSH), also usable
 from any HTTP client. It reads the hot list, searches videos, downloads videos
-and extracts frames for vision models, and drives web DM/group chat through
-Playwright — with dry-run **on by default** and three independent gates before
-anything is actually sent.
+and extracts frames for vision models, sends videos as native share cards, and
+drives web DM/group chat through Playwright — with dry-run **on by default** and
+independent gates before anything is actually sent. A bundled scheduler watches
+the owner's DMs, wakes an agent on each new video, and only marks a video done
+after a read-back proves the reply was delivered.
 
 ---
 
@@ -27,6 +29,7 @@ anything is actually sent.
 - [特性](#特性)
 - [项目定位](#项目定位)
 - [架构](#架构)
+- [大肥鱼流水线（定时看私信）](#大肥鱼流水线定时看私信)
 - [环境要求](#环境要求)
 - [安装](#安装)
 - [登录](#登录)
@@ -38,22 +41,25 @@ anything is actually sent.
 - [常见问题](#常见问题)
 - [目录结构](#目录结构)
 - [开发](#开发)
-- [许可与致谢](#许可与致谢)
+- [许可](#许可)
 
 ## 这是什么
 
 一个 **DSH 插件**（Cordis Host 插件，工具直接注册到 `ctx.tools`，不是 MCP
 server），外加一组可以单独调用的 Python 脚本。
 
-它解决四件事：
+它解决五件事：
 
 1. **读得动**：热榜、搜索、视频详情、用户主页、评论。
 2. **看得懂**：视频下载 → ffmpeg 抽帧 → 交给支持视觉的模型（比如 DeepSeek
    flash 的原生视觉），不需要自己实现视频理解。
-3. **说得上话**：通过 Playwright 驱动抖音网页版，私信单个用户、给群聊发消息。
+3. **说得上话**：通过 Playwright 驱动抖音网页版，私信单个用户、给群聊发消息，
+   或者把视频以**原生分享卡片**发出去（文本链接在抖音里点不开，还会被吞）。
    HTTP API 默认 headless（无窗口弹出）；手动调试设 `DOUYIN_HEADLESS=0` 可看操作过程。
 4. **接得住**：所有能力都能通过本地 HTTP API（默认 `127.0.0.1:7709`）暴露，
    任何语言写的上层程序都能调。
+5. **跑得久**：附一个调度器，定时读主人私信，有新视频才唤醒 agent，看完写日记、
+   回私信，并把「回没回成功」用回读证据确认。
 
 它**不做**：发布视频、批量点赞关注、养号、多账号矩阵、自动过验证码、签名逆向。
 
@@ -68,6 +74,9 @@ server），外加一组可以单独调用的 Python 脚本。
 | 视频下载 | 移动端分享页解析无水印直链，绕过失效的 Douyin 提取器 | 是 |
 | 抽帧 | ffmpeg 均匀抽 4–12 帧，供视觉模型使用 | 是 |
 | 私信 / 群聊 | Playwright 驱动网页版，dry-run 默认，三道闸 | 是 |
+| 分享卡片 | 走抖音自己的「分享给朋友」，把视频以原生卡片发出并回读确认 | 是 |
+| 本地记忆 | 每位联系人一份 `dm-*.json`，只存本机，合并去重、有上限 | — |
+| 发送闸 | 两次发送最少隔 30 秒；风控/失败自动进冷却，冷却期内不开浏览器 | — |
 | 登录状态机 | 可轮询的扫码/短信状态机（有头环境） | — |
 | 状态自检 | 依赖、登录态、配额、上次错误一句话总结 | 否 |
 | HTTP API | 上述能力的 JSON 接口 | 视接口 |
@@ -111,6 +120,67 @@ flowchart TD
 两条入口（DSH 插件 / HTTP）共享同一批 Python 脚本和同一个 `data/` 目录，互不
 冲突：插件走子进程 + 自己的串行门；HTTP 服务另有进程级锁，避免同时开两个
 Chromium。
+
+## 大肥鱼流水线（定时看私信）
+
+不是自主刷视频，而是**只看主人发来的内容**：主人发一条，大肥鱼看一条、写日记、回一句。
+
+```mermaid
+flowchart TD
+    A[定时器<br/>watch.intervalMinutes] --> B[douyin_im.py read<br/>零 token]
+    B --> C{有新内容?}
+    C -- 否 --> A
+    C -- 是 --> D[并入本地队列<br/>按 item_id 去重]
+    D --> E[取最早一条未回复的]
+    E --> F[唤醒 agent<br/>带记忆 + 内容 ID]
+    F --> G[frames 抽帧 → 看图]
+    G --> H[写公开日记 + 私人日记]
+    H --> I[douyin.mjs send --send]
+    I --> J[回读私信<br/>有没有新发出的消息]
+    J -- 有 --> K[标记该 item_id 已回复]
+    J -- 没有 --> L[不标记，下轮重试]
+```
+
+### 几处设计是为解决具体问题
+
+| 设计 | 要解决的问题 |
+|---|---|
+| 按 `item_id` 排队，不只依赖当前页面 | 私信页只渲染十来条，新消息会把老卡片挤出 DOM；只看「页面上有什么」会漏掉还没处理的视频 |
+| 回读确认后才标记已回复 | agent「跑完了」不等于私信发出去了——它卡在登录态上也会照常返回成功 |
+| 每轮新会话 + 本地记忆 | 上下文底座从约 260k 降到约 30k；记忆只给最近 10 行和长期事实，不把整段历史塞进提示词 |
+| 发送闸 + 冷却 | 连续发送会触发风控，随后整段会话被服务端作废 |
+
+### 命令
+
+```bash
+# 启动（Windows 用 VBS 起，不弹控制台窗口）
+cscript //nologo start-whale.vbs
+node scheduler/scheduler.mjs --status        # 状态
+node scheduler/scheduler.mjs --stop          # 停止
+
+# 排查用（都不唤醒模型、不花钱）
+node scheduler/scheduler.mjs --dry-tick      # 打印本轮会处理哪条
+node scheduler/scheduler.mjs --memory-sync   # 把当前会话灌进本地记忆
+
+# 立刻跑一轮
+node scheduler/scheduler.mjs --watch-now
+```
+
+状态和记忆都在 `~/.dsh/`：
+
+| 文件 | 内容 |
+|---|---|
+| `douyin-whale.config.json` | 主人昵称、检查间隔、时段、每日上限 |
+| `douyin-whale-state.json` | 内容队列、已回复 id、今日计数 |
+| `douyin-whale-scheduler.log` | 运行日志 |
+| `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
+| `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
+
+### 暂不支持的
+
+- **图文**（`aweType=0` 且带 `itemId`）：`frames` 只处理视频，图文会被自动跳过并记日志。
+- **自动恢复登录**：抖音在服务端作废旧会话时，本地 cookie 还在、页面已经要扫码；
+  偶发还要求滑块验证，那一步只能人工完成。
 
 ## 环境要求
 
@@ -185,26 +255,58 @@ curl -s http://127.0.0.1:7709/health | jq .
 
 ## 登录
 
-**必须在有显示器的电脑上登录，再把 cookie 送到服务器。** 服务器 headless 环境
-无法扫码、无法过滑块。
+运行时会用一个**持久化浏览器 profile**（`data/im-profile`）保存登录态。它和运行
+用的是同一份目录，所以重启对抖音来说只是「同一个浏览器重启」，不会被当成新设备
+——这一点很关键，用 `storage_state` 每次新建 context 会被判定为连续换设备，表现
+为「读消息正常、一发私信就掉登录」。
 
 ```bash
-# 本地电脑上执行，会弹出浏览器窗口
+# 单机：直接在本机登录，写进运行时用的那个 profile
 .venv/bin/python tools/export_login_state.py
-# 扫码登录成功后，自动写出 data/home/.dy/cookies/default.json
 
-# 送到服务器
-scp data/home/.dy/cookies/default.json user@server:~/dsh-douyin-whale/data/home/.dy/cookies/default.json
-ssh user@server 'chmod 600 ~/dsh-douyin-whale/data/home/.dy/cookies/default.json'
+# 会弹出浏览器窗口：扫码；如果抖音要求滑块，就在这个窗口里拖过去
 ```
-
-完整流程、可选参数、过期处理见 [`docs/COOKIE-GUIDE.md`](docs/COOKIE-GUIDE.md)。
 
 登录后验证：
 
 ```bash
 curl -s -X POST http://127.0.0.1:7709/im/status | jq .
+# 或直接用命令行
+python python/douyin_im.py status
 ```
+
+### 服务器 / 无显示器的情况
+
+```bash
+# 1) 在有显示器的电脑上登录并导出
+.venv/bin/python tools/export_login_state.py --out ./cookies.json
+
+# 2) 送到服务器
+scp cookies.json user@server:~/dsh-douyin-whale/data/home/.dy/cookies/default.json
+ssh user@server 'chmod 600 ~/dsh-douyin-whale/data/home/.dy/cookies/default.json'
+```
+
+`data/home/.dy/cookies/default.json` 只在 profile 里**还没有** sessionid 时被灌入
+一次，不会覆盖已有登录态。
+
+### 没有显示器又只想出个二维码
+
+```bash
+python tools/login_headless.py --timeout 600
+# 打出 {"phase":"qr","qr":".../data/im-shots/login-qr.png"}
+# 打开那个 PNG，用手机抖音扫
+```
+
+⚠️ 这条只在**不需要滑块验证**时可用——验证码必须有人在真实窗口里操作，项目不会
+也不会尝试绕过它。
+
+### 怎么判断是「真掉登录」还是页面没加载好
+
+cookie 存在**不代表**登录有效：抖音会在服务端作废会话，`sessionid` 还躺在 profile
+里，但页面已经要求重新扫码。所以判定必须看页面（登录面板是否可见），不能只看
+cookie。`status` 报 `NEED_LOGIN` 就是真失效，需要重新登录。
+
+完整流程、可选参数、过期处理见 [`docs/COOKIE-GUIDE.md`](docs/COOKIE-GUIDE.md)。
 
 ## 快速开始
 
@@ -268,6 +370,9 @@ node douyin.mjs frames <aweme_id|分享链接> --n 8
 node douyin.mjs watch "猫" --count 5 --n 6   # 选一条没看过的视频并抽帧
 node douyin.mjs trending
 node douyin.mjs status
+node douyin.mjs read-dm --from 某位好友 --limit 20        # 读私信（含视频卡片 id）
+node douyin.mjs share --aweme <id> --to 某位好友          # 分享卡片（默认 dry-run）
+DOUYIN_IM_ALLOW_SEND=1 node douyin.mjs share --aweme <id> --to 某位好友 --send
 ```
 
 如果不想让它自己起服务，加 `--no-start`；要指定地址，加 `--base-url`。
@@ -278,8 +383,11 @@ node douyin.mjs status
 python python/douyin_im.py status
 python python/douyin_im.py conversations --limit 20
 python python/douyin_im.py groups --limit 20
+python python/douyin_im.py read --from 某位好友 --limit 20
 python python/douyin_im.py send --to=某某 --text=在吗          # dry-run
 DOUYIN_IM_ALLOW_SEND=1 python python/douyin_im.py send --to=某某 --text=在吗 --send
+python python/douyin_im.py gate                 # 看发送闸/冷却剩余
+python python/douyin_im.py gate --clear         # 手动清除冷却
 ```
 
 ## 配置
@@ -346,9 +454,15 @@ DOUYIN_IM_ALLOW_SEND=1 python python/douyin_im.py send --to=某某 --text=在吗
 
 另外还有几层保护：
 
+- **发送闸**：两次真实发送至少隔 30 秒；`SEND_FAILED` / `SEND_UNCONFIRMED` 进
+  2 分钟冷却，`RISK_CONTROL` 进 10 分钟冷却。冷却期内直接拒绝，**连浏览器都不开**。
+  `python python/douyin_im.py gate` 查看，`gate --clear` 手动清除。
+- **发送回读**：只数「我发的、内容与正文匹配」的消息条数有没有 +1，而不是找某个
+  `isFromMe` 元素——后者在输入框还留着字、或别人说了同样的话时会假阳性。
 - 群发前先校验打开的会话标题与目标群名匹配，不匹配立即 `NOT_GROUP` 中止；
-- 发送后必须确认到自己的消息气泡，确认不到报 `SEND_UNCONFIRMED` 并**不自动重试**；
-- 全局文件锁，同一时刻只有一个浏览器实例；
+- 超过 1800 字的正文直接拒绝（抖音私信放不下，拆开发）；
+- 全局文件锁，同一时刻只有一个浏览器实例。Windows 没有 `fcntl`，所以用的是
+  `O_EXCL` 锁文件 + PID + 过期清理；
 - 超时用进程组回收，避免 Chromium 变孤儿吃满内存。
 
 评论（`douyin_comment`）是另一套：需要 `writesEnabled: true` +
@@ -433,23 +547,36 @@ dsh-douyin-whale/
 ├── cordis.patch.yml             # 插件挂载与默认配置
 ├── icon.svg
 ├── index.js                     # DSH 入口：注册工具
+├── douyin.mjs                   # 独立命令行（自动拉起本地 HTTP API）
 ├── lib/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
 │   ├── tools.js                 # 11 个工具定义
+│   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
 │   └── normalize.js             # 响应归一化（缺失即 null）
+├── scheduler/
+│   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认
+│   ├── memory.mjs               # 每人一份本地记忆（合并 / 去重 / 上限）
+│   ├── memory.test.mjs          # 记忆模块自测
+│   ├── tools-deny.txt           # 唤醒时裁掉的工具名（压上下文底座）
+│   └── agent/AGENTS.md          # 被唤醒 agent 的最小工作说明
 ├── python/
 │   ├── douyin_bridge.py         # Playwright 登录状态机 / 评论
-│   ├── douyin_im.py             # 私信 / 群聊驱动（dry-run 默认）
+│   ├── douyin_im.py             # 私信 / 群聊 / 分享卡片（dry-run 默认）
 │   ├── douyin_http.py           # HTTP API（FastAPI, :7709）
 │   ├── dy_query.py              # 搜索分页补丁
 │   ├── requirements.txt
 │   └── requirements-http.txt
 ├── tools/
-│   ├── export_login_state.py    # 本地扫码登录 → 导出 storage_state
+│   ├── export_login_state.py    # 有头扫码登录 → 写入持久化 profile
+│   ├── login_headless.py        # 无头出二维码（截图给人扫）
 │   └── probe_im.py              # DOM 探测（前端改版后对照选择器）
 ├── tests/
 │   ├── fixture_chat.html        # 私信 DOM 仿真页
-│   └── test_fixture.py          # dry-run / 发送 / 群名匹配 的离线测试
+│   ├── test_fixture.py          # dry-run / 发送 / 群名匹配 的离线测试
+│   ├── test_readback.py         # 发送回读判定
+│   ├── test_send_gate.py        # 发送闸 / 冷却
+│   └── test_safety.py           # 静态安全检查（不注入伪装脚本）
+├── start-whale.cmd / .vbs       # Windows 静默启动调度器
 ├── scripts/
 │   ├── run-http.sh / .ps1       # 启动 HTTP 服务
 │   └── selfcheck.sh / .ps1      # 环境自检
@@ -467,20 +594,15 @@ dsh-douyin-whale/
 ## 开发
 
 ```bash
-# JS 语法检查
-node --check index.js
-node --check lib/backend.js
-node --check lib/tools.js
-node --check lib/normalize.js
-# 或
-npm run check
-
-# Python 语法检查
+npm run check      # 所有 Node 文件语法检查（含 scheduler/）
 python -m py_compile python/*.py tools/*.py tests/*.py
 
-# 离线跑私信逻辑测试（不联网、不发消息）
-python tests/test_fixture.py
+npm test           # 不联网、不发消息：安全检查 + 回读判定 + 发送闸 + 记忆
+npm run test:fixture   # 在仿真 DOM 上跑 dry-run / 发送 / 群名匹配
 ```
+
+`npm test` 覆盖的是最容易回归的四块：不注入伪装脚本、发送回读判定、发送闸/冷却、
+本地记忆的合并与上限。它们都不需要登录，改完直接跑。
 
 改工具：在 `lib/tools.js` 的 `createTools()` 里加 `defineTool({...})`，然后在
 `index.js` 的 `TOOL_SWITCH`、`cordis.patch.yml` 的 `toolEnabled`、README 的工具
@@ -488,6 +610,10 @@ python tests/test_fixture.py
 
 改选择器：抖音前端改版后，跑 `python tools/probe_im.py` 采集新的 class /
 placeholder，对照 `python/douyin_im.py` 顶部的常量调整。
+
+改消息解析：结构化字段来自 React fiber 的 `parsedContent`（`itemId` / `aweType` /
+`text` / `content_title`）。注意里面**没有时间戳**，列表方向只能靠几何位置判断；
+系统消息（`is_system_type`）必须跳过，否则空文本会被当成「我发的空消息」。
 
 ## 许可
 
