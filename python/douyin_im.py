@@ -254,6 +254,75 @@ def profile_has_data() -> bool:
         return False
 
 
+# --------------------------------------------------------------------------
+# 发送闸：同一通道最小间隔 + 风控冷却
+# --------------------------------------------------------------------------
+GATE_FILE = os.path.join(DATA, "im-send-gate.json")
+SEND_MIN_INTERVAL = float(os.environ.get("DOUYIN_SEND_MIN_INTERVAL", "30"))
+RISK_COOLDOWN = float(os.environ.get("DOUYIN_RISK_COOLDOWN", "600"))
+FAIL_COOLDOWN = float(os.environ.get("DOUYIN_FAIL_COOLDOWN", "120"))
+
+
+def _gate_read() -> dict:
+    try:
+        with open(GATE_FILE, encoding="utf-8") as fh:
+            return json.load(fh) or {}
+    except Exception:
+        return {}
+
+
+def _gate_write(patch: dict) -> None:
+    cur = _gate_read()
+    cur.update(patch)
+    cur["updated_at"] = time.time()
+    try:
+        os.makedirs(DATA, exist_ok=True)
+        with open(GATE_FILE, "w", encoding="utf-8") as fh:
+            json.dump(cur, fh, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def check_send_gate(kind: str = "text") -> None:
+    """发送前检查：冷却中 / 间隔太短都直接拒绝，不要去打抖音。
+
+    为什么要有：抖音对连续发送很敏感，实测连发会 403，然后会话被作废。
+    宁可本地挡住，也不要在服务端试错。
+    """
+    g = _gate_read()
+    now = time.time()
+    blocked_until = float(g.get("blocked_until") or 0)
+    if blocked_until > now:
+        raise IMError(
+            "SEND_COOLDOWN",
+            f"风控冷却中，还要等 {int(blocked_until - now)} 秒"
+            f"（原因：{g.get('blocked_reason') or '未知'}）")
+    last = float(g.get(f"last_{kind}_at") or g.get("last_send_at") or 0)
+    if last and (now - last) < SEND_MIN_INTERVAL:
+        wait = int(SEND_MIN_INTERVAL - (now - last)) + 1
+        raise IMError("SEND_TOO_SOON", f"距上次发送不足 {int(SEND_MIN_INTERVAL)} 秒，还要等 {wait} 秒")
+
+
+def record_send(kind: str = "text") -> None:
+    now = time.time()
+    _gate_write({"last_send_at": now, f"last_{kind}_at": now})
+
+
+def record_risk(reason: str, seconds: float | None = None) -> None:
+    secs = RISK_COOLDOWN if seconds is None else seconds
+    _gate_write({"blocked_until": time.time() + secs,
+                 "blocked_reason": reason[:120]})
+
+
+def _note_gate_failure(exc) -> None:
+    """命令失败时按错误类型落闸。"""
+    code = getattr(exc, "code", "") or ""
+    if code == "RISK_CONTROL":
+        record_risk("抖音弹安全验证")
+    elif code in ("SEND_FAILED", "SEND_UNCONFIRMED"):
+        record_risk(f"发送失败 {code}", FAIL_COOLDOWN)
+
+
 class _LockHandle:
     """锁句柄：close() 时删掉锁文件。"""
 
@@ -440,7 +509,8 @@ async def new_context(pw, cookie_file: str | None):
         args=[
             "--no-sandbox",
             "--disable-dev-shm-usage",
-            "--disable-gpu",
+            # 不要加 --disable-gpu：那会让 headless 完全没有 WebGL，和扫码登录
+            # 时那个有头浏览器的指纹对不上，抖音会把这当成「换了设备」把会话踢掉。
         ],
         viewport={"width": 1440, "height": 950},
         locale="zh-CN",
@@ -1020,6 +1090,13 @@ async def cmd_status(cookie_file: str | None) -> dict:
            "data_dir": DATA,
            # 真实发送的总闸：只有环境变量为 1 且命令带 --send 才会发出去
            "send_allowed": os.environ.get("DOUYIN_IM_ALLOW_SEND") == "1"}
+    _g = _gate_read()
+    out["send_gate"] = {
+        "cooldown_remaining_s": max(0, int(float(_g.get("blocked_until") or 0) - time.time())),
+        "blocked_reason": _g.get("blocked_reason") or "",
+        "last_send_ago_s": (int(time.time() - float(_g.get("last_send_at") or 0))
+                            if _g.get("last_send_at") else None),
+    }
     if not cookie_file and not profile_has_data():
         out.update({
             "logged_in": False,
@@ -1132,6 +1209,8 @@ async def cmd_send(cookie_file: str | None, target: str, text: str, do_send: boo
                    want_shot: bool, expect_group: bool = False) -> dict:
     if not text.strip():
         raise IMError("BAD_INPUT", "text 不能为空")
+    if do_send:
+        check_send_gate("text")  # 冷却中/间隔太短就不开浏览器了，直接拒
     async with open_browser(cookie_file) as page:
         await ensure_chat_page(page)
         title = await open_conversation(page, target)
@@ -1162,6 +1241,7 @@ async def cmd_send(cookie_file: str | None, target: str, text: str, do_send: boo
             result["trigger"] = how
             result.update(await confirm_sent(page, text, baseline))
             result["sent"] = True
+            record_send("text")
             result["screenshot"] = await screenshot(page, target + "_sent") if want_shot else ""
         else:
             result["input_verified"] = True
@@ -1285,6 +1365,8 @@ async def cmd_share(cookie_file: str | None, aweme_id: str, target: str, do_send
         raise IMError("BAD_INPUT", f"aweme_id 不合法：{aweme_id!r}")
     if not target:
         raise IMError("BAD_INPUT", "target 不能为空")
+    if do_send:
+        check_send_gate("card")
 
     async with open_browser(cookie_file) as page:
         await page.goto(f"https://www.douyin.com/video/{aweme_id}",
@@ -1349,6 +1431,8 @@ async def cmd_share(cookie_file: str | None, aweme_id: str, target: str, do_send
         readback = await confirm_share(page, target, aweme_id)
         result["readback"] = readback
         result["sent"] = bool(readback.get("found"))
+        if result["sent"]:
+            record_send("card")
         if want_shot:
             result["screenshot"] = await screenshot(page, target + "_share_sent")
         if not result["sent"]:
@@ -1764,6 +1848,9 @@ def main(argv=None) -> int:
                          help="真实发送（另需 DOUYIN_IM_ALLOW_SEND=1）")
     p_share.add_argument("--screenshot", action="store_true", default=True)
 
+    p_gate = sub.add_parser("gate", help="查看/清除发送闸（风控冷却）")
+    p_gate.add_argument("--clear", action="store_true", help="清除冷却，立即允许发送")
+
     args = ap.parse_args(argv)
 
     do_send = bool(getattr(args, "send", False))
@@ -1781,6 +1868,26 @@ def main(argv=None) -> int:
             emit(False, code="TARGET_NOT_ALLOWED",
                  message=f"目标「{target}」不在 DOUYIN_IM_ALLOW_TO 白名单里，已拒绝发送")
             return 2
+
+    # gate 只读写一个本地文件，不需要开浏览器，也不该抢浏览器锁
+    if args.cmd == "gate":
+        if getattr(args, "clear", False):
+            try:
+                os.remove(GATE_FILE)
+            except Exception:
+                pass
+            emit(True, data={"cleared": True})
+            return 0
+        g = _gate_read()
+        now = time.time()
+        emit(True, data={
+            "gate": g,
+            "cooldown_remaining_s": max(0, int(float(g.get("blocked_until") or 0) - now)),
+            "last_send_ago_s": (int(now - float(g.get("last_send_at") or 0))
+                                if g.get("last_send_at") else None),
+            "min_interval_s": SEND_MIN_INTERVAL,
+        })
+        return 0
 
     lock = None
     try:
@@ -1825,6 +1932,11 @@ def main(argv=None) -> int:
         emit(False, code="TIMEOUT", message="操作超时（150s）：页面可能加载缓慢或风控弹窗阻塞")
         os._exit(1)
     except IMError as e:
+        # 风控/发送失败要落闸：冷却期内别再打抖音，越重试封越久
+        try:
+            _note_gate_failure(e)
+        except Exception:
+            pass
         emit(False, code=e.code, message=e.message)
         os._exit(1)
     except Exception as e:  # 兜底：不让上层看到裸栈
