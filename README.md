@@ -182,6 +182,29 @@ node scheduler/scheduler.mjs --watch-now
 - **自动恢复登录**：抖音在服务端作废旧会话时，本地 cookie 还在、页面已经要扫码；
   偶发还要求滑块验证，那一步只能人工完成。
 
+### 设置页面板
+
+装进 DSH 后，设置里会出现「大肥鱼」一页（`client.js`，宿主注入，无构建步骤）：
+运行状态、内容队列（旧→新，带已回复/待回复标记）、配置（主人昵称 / 检查间隔 /
+每日上限 / 时段）、启停调度器、日志 tail。
+
+- 面板**只读**运行时状态，状态唯一来源是 `~/.dsh/` 下的文件（调度器维护），
+  写操作仅限改配置和启停调度器——**不提供绕过发送闸的发消息入口**。
+- 需要宿主提供 `webServer` / `slots` 两个能力；没有时插件照常工作，只是没有
+  这页（启动时会打一条 `webServer_unavailable` 日志）。
+- 后端路由挂在 `/api/douyin-whale/*`，接口一览：
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/status` | 概览（调度器存活、今日计数、发送闸、队列、记忆） |
+| GET | `/queue` | 内容队列全量 + 每条状态 |
+| GET | `/log?n=80` | 日志尾部（最多 400 行） |
+| GET | `/config` | 当前配置（含默认值兜底） |
+| POST | `/config` | 改配置（只接受已知字段并钳制范围） |
+| POST | `/scheduler/start` | 静默启动调度器（借 VBS，无窗口） |
+| POST | `/scheduler/stop` | 停止调度器 |
+| GET | `/gate`、`/memory` | 发送闸剩余冷却 / 记忆占用 |
+
 ## 环境要求
 
 | 项 | 要求 | 备注 |
@@ -546,12 +569,15 @@ dsh-douyin-whale/
 ├── package.json                 # DSH 插件元数据（dsh.bundle.patch）
 ├── cordis.patch.yml             # 插件挂载与默认配置
 ├── icon.svg
-├── index.js                     # DSH 入口：注册工具
+├── index.js                     # DSH 入口：注册工具 + /api/douyin-whale 路由
+├── client.js                    # 设置页面板（宿主注入的 React，无构建步骤）
 ├── douyin.mjs                   # 独立命令行（自动拉起本地 HTTP API）
 ├── lib/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
 │   ├── tools.js                 # 11 个工具定义
 │   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
+│   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）
+│   ├── panel_api.js             # /api/douyin-whale/* 路由实现
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

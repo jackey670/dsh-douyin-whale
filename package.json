@@ -11,7 +11,14 @@
   },
   "files": [
     "index.js",
+    "client.js",
     "lib/*.js",
+    "douyin.mjs",
+    "scheduler/*.mjs",
+    "scheduler/tools-deny.txt",
+    "scheduler/agent/AGENTS.md",
+    "start-whale.cmd",
+    "start-whale.vbs",
     "python/*.py",
     "python/requirements.txt",
     "icon.svg",
@@ -50,17 +57,26 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ]
     }
   },
   "scripts": {
-    "check": "node --check index.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js && node --check lib/douyin_http_client.mjs && node --check douyin.mjs && node --check scheduler/scheduler.mjs && node --check scheduler/memory.mjs",
+    "check": "node --check index.js && node --check client.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js && node --check lib/douyin_http_client.mjs && node --check lib/whale_state.js && node --check lib/panel_api.js && node --check douyin.mjs && node --check scheduler/scheduler.mjs && node --check scheduler/memory.mjs",
     "http": "python python/douyin_http.py",
     "douyin": "node douyin.mjs",
     "test:fixture": "python tests/test_fixture.py",
     "test:safety": "python -m pytest -q tests/test_safety.py",
     "test:readback": "python -m pytest -q tests/test_readback.py",
-    "test": "python -m pytest -q tests/test_safety.py tests/test_readback.py tests/test_send_gate.py && node scheduler/memory.test.mjs",
+    "test": "python -m pytest -q tests/test_safety.py tests/test_readback.py tests/test_send_gate.py && node scheduler/memory.test.mjs && node lib/panel.test.mjs",
     "test:memory": "node scheduler/memory.test.mjs",
-    "test:js": "node scheduler/memory.test.mjs"
+    "test:js": "node scheduler/memory.test.mjs",
+    "test:panel": "node lib/panel.test.mjs"
   }
 }
