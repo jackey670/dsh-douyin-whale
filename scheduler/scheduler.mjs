@@ -145,7 +145,12 @@ function wakeAgent(text, tag = 'wake') {
   if (Date.now() - lastWakeFailure < WAKE_BACKOFF_MS) return Promise.resolve({ ok: false, skipped: 'backoff' })
   waking = true; wakingSince = Date.now()
 
-  const args = [ZCODE_CLI, '-p', text, '--cwd', AGENT_DIR, '--json', '--no-color', '--mode', 'yolo']
+  const args = [
+    ZCODE_CLI, '-p', text, '--cwd', AGENT_DIR, '--json', '--no-color', '--mode', 'yolo',
+    // 关键：不带 surface 时桌面版 CLI 会把 ZCode 窗口顶到前台（大白框）。
+    // terminal surface 才是纯后台 headless prompt。
+    '--surface', 'terminal',
+  ]
   const deny = denyTools()
   if (deny) args.push('--disallowed-tools', deny)
 
