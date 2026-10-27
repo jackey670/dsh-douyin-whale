@@ -58,6 +58,8 @@
 - `POST /duty/selftest` → 200，新建 `douyin-whale-duty-v1`（provider=deepseek-official），
   日志记录了 `agents.get/resume/create` 的完整路径；该宿主没有根会话，所以值班会话
   暂时出现在侧栏（有任意根会话后会作为子会话隐藏）。
+- 有头登录 `tools/export_login_state.py` 能正常弹出浏览器窗口；本次运行在已有
+  有效会话时直接导出 84 条 cookie（只读状态 `logged_in: true`）。
 
 ## 安装 / 升级
 
@@ -74,8 +76,9 @@ dsh plugin --profile web add dsh-douyin-whale@1.4.1
 
 ## 已知限制
 
-- **账号当前是滑块/拼图风控**：无头扫码会在 20 秒内失败并提示改用有头窗口；
-  验证码必须人工完成，项目不会绕过。队列里 4 条待回复视频要等登录恢复后才会处理。
+- **登录页遇到滑块/拼图**：无头扫码会在 20 秒内失败并提示改用有头窗口；
+  验证码必须人工完成，项目不会绕过。持久化 profile 里的会话如果还有效，
+  有头窗口会直接进入已登录状态。
 - **图文帖**（`aweType=0` 带 `itemId`）不做抽帧，自动跳过并记日志。
 - **值班会话的侧栏行为**：宿主没有任何根会话时，`douyin-whale-duty-v1` 会暂时
   出现在侧栏；有任意根会话后会作为子会话隐藏。这是 DSH 借 parent 的限制。
