@@ -215,6 +215,18 @@ window.__ModuleLoader__.load({
         }
       }, [load]);
 
+      const dutyTest = useCallback(async () => {
+        setBusy('duty');
+        try {
+          const j = await jpost('/duty/selftest');
+          setMsg(j.ok ? '值班会话已就绪（get/resume/create 通过）' : (j.error || '值班会话自检失败'));
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setBusy('');
+        }
+      }, []);
+
       const running = data?.daemon?.running === true;
       const gate = data?.gate ?? {};
       const queue = data?.queue ?? {};
@@ -249,6 +261,7 @@ window.__ModuleLoader__.load({
             : h('div', { 'data-dy2-empty': '' }, busy === 'load' ? '加载中…' : '没有数据'),
           h('div', { 'data-dy2-row': '' },
             h('button', { 'data-dy2-btn': '', disabled: Boolean(busy), onClick: load }, '刷新'),
+            h('button', { 'data-dy2-btn': '', disabled: Boolean(busy), onClick: dutyTest }, '测试值班会话'),
             running
               ? h('button', {
                 'data-dy2-btn': '', 'data-danger': '', disabled: Boolean(busy),

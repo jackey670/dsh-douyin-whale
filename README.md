@@ -202,7 +202,7 @@ node scheduler/scheduler.mjs --watch-now
 
 装进 DSH 后，设置里会出现「大肥鱼刷抖音」一页（`client.js`，宿主注入，无构建步骤）：
 运行状态、内容队列（旧→新，带已回复/待回复标记）、配置（主人昵称 / 检查间隔 /
-每日上限 / 时段）、启停本地调度器、登录引导（二维码内嵌）、日志 tail。
+每日上限 / 时段）、启停本地调度器、值班会话自检、登录引导（二维码内嵌）、日志 tail。
 
 - 面板**只读**运行时状态，状态唯一来源是 `~/.dsh/` 下的文件（调度器维护），
   写操作仅限改配置和启停调度器——**不提供绕过发送闸的发消息入口**。
@@ -220,6 +220,7 @@ node scheduler/scheduler.mjs --watch-now
 | POST | `/config` | 改配置（只接受已知字段并钳制范围） |
 | POST | `/scheduler/start` | 静默启动独立调度器（借 VBS；没装 ZCode 时返回 400） |
 | POST | `/scheduler/stop` | 停止调度器 |
+| POST | `/duty/selftest` | 只拉值班会话（get/resume/create），不投任务、不发私信 |
 | GET | `/login/status` | 扫码登录阶段（idle/starting/qr/ok/failed） |
 | GET | `/login/qr.png` | 内嵌二维码（只在扫码进程活着且路径安全时下发） |
 | POST | `/login/qr` | 起一个无头扫码进程 |

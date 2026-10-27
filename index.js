@@ -47,6 +47,10 @@ export function apply(ctx, config = {}) {
   const resolved = resolveConfig(ROOT, config ?? {});
   if (!resolved.enabled) return;
 
+  // 面板的「测试值班会话」按钮用：值班 fiber 就绪后指向真正的 ensure()。
+  // 关掉 whaleEnabled 或宿主没有 agents 时保持 null，路由会回 400 说明原因。
+  let dutyProbe = null;
+
   ctx.effect(() => {
     const backend = new Backend(resolved);
     const tools = createTools(backend).filter((tool) => {
@@ -87,7 +91,11 @@ export function apply(ctx, config = {}) {
             /* 日志失败不影响请求 */
           }
         };
-        const handle = createWhaleApi({ log: apiLog, dataDir: resolved.dataDir });
+        const handle = createWhaleApi({
+          log: apiLog,
+          dataDir: resolved.dataDir,
+          dutyProbe: () => (typeof dutyProbe === 'function' ? dutyProbe() : null),
+        });
         webCtx.effect(() => webServer.register({
           kind: 'prefix',
           path: '/api/douyin-whale',
@@ -138,6 +146,25 @@ export function apply(ctx, config = {}) {
           const tick = createWhaleTick({
             log: dutyLog, dutyAgent, root: ROOT, dataDir: resolved.dataDir,
           });
+          // 面板自检：只拉会话（get/resume/create），不投任务、不发私信。
+          // 20 秒超时兜底，避免 agents.create 卡住 HTTP 请求。
+          dutyProbe = async () => {
+            try {
+              const handle = await Promise.race([
+                dutyAgent.ensure(),
+                new Promise((resolve) => setTimeout(() => resolve('timeout'), 20_000)),
+              ]);
+              if (handle === 'timeout') {
+                return { ok: false, error: '值班会话创建超时（20s）——看插件日志确认 agents.create 卡在哪' };
+              }
+              return handle
+                ? { ok: true, sessionId: 'douyin-whale-duty-v1', note: '值班会话已就绪' }
+                : { ok: false, error: '值班会话没拉起来（宿主 agents 不可用或 create 失败，详见插件日志）' };
+            } catch (e) {
+              return { ok: false, error: String(e?.message ?? e) };
+            }
+          };
+          agentCtx.effect(() => () => { dutyProbe = null; }, 'douyin-whale: duty probe');
           agentCtx.effect(() => {
             let disposed = false;
             let timer = null;
