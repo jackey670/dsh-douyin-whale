@@ -354,6 +354,11 @@ def _pid_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+    except SystemError:
+        # Windows: os.kill(missing_pid, 0) 抛的是 SystemError（"returned a result
+        # with an exception set"），不是 OSError。若当成“活着”，僵死锁永远清不掉，
+        # 读私信会卡满 180 秒再报 BUSY。
+        return False
     except Exception:
         return True
 

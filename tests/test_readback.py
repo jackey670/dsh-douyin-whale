@@ -75,3 +75,9 @@ def test_empty_text_counts_zero() -> None:
 def test_unknown_sender_is_not_counted() -> None:
     # 发送方判断不出来时宁可不算，避免把别人的话当自己发的
     assert D.count_my_matching([msg("unknown", "好耶")], "好耶") == 0
+
+
+def test_missing_pid_is_not_alive() -> None:
+    # Windows 上 os.kill(缺失 PID, 0) 抛 SystemError 而不是 OSError；
+    # 若当成“活着”，僵死锁永远清不掉，读私信会卡满 180 秒再 BUSY。
+    assert D._pid_alive(2_147_483_600) is False

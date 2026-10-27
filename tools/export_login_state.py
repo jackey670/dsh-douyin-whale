@@ -48,15 +48,28 @@ sys.path.insert(0, os.path.join(ROOT, "python"))
 
 import douyin_im as D  # noqa: E402
 
-LOGIN_URL = "https://www.douyin.com/"
+LOGIN_URL = D.CHAT_URL
 
-# 两个判定条件是"或"的关系：HasUserLogin 更准，sessionid 是兜底。
+# 抖音会在服务端作废旧会话：localStorage 的 HasUserLogin 和 sessionid cookie
+# 都可能还在，但页面已经回到登录/风控界面。判定必须先看页面，再看存储；
+# 否则窗口会在你还没来得及扫码时就被关掉，导出一份无效 cookie。
+LOGIN_UI_MARKERS = ("扫码登录", "验证码登录", "密码登录", "安全验证", "完成验证", "验证后继续")
+
+# 只作辅助信号：调用方必须先确认页面没有登录/风控 UI。
 LOGGED_IN_JS = """() => {
   try {
     if (localStorage.getItem('HasUserLogin') === '1') return 'localStorage';
   } catch (e) {}
   return '';
 }"""
+
+
+async def page_has_login_ui(page) -> bool:
+    try:
+        text = await page.evaluate("() => (document.body && document.body.innerText) || ''")
+    except Exception:
+        return True
+    return any(m in text for m in LOGIN_UI_MARKERS)
 
 
 def cookies_have_session(cookies) -> bool:
@@ -97,6 +110,8 @@ async def run(args) -> int:
 
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60_000)
+        # SPA 的登录弹层是异步的：先等 3 秒再判定，别被旧 localStorage 骗了
+        await page.wait_for_timeout(3_000)
 
         print("=" * 60)
         print("浏览器已打开。请在窗口里用抖音 App 扫码登录（或短信登录）。")
@@ -105,19 +120,31 @@ async def run(args) -> int:
 
         deadline = time.monotonic() + args.timeout
         how = ""
+        last = ""
+        stable = 0
         while time.monotonic() < deadline:
-            try:
-                how = await page.evaluate(LOGGED_IN_JS)
-            except Exception:
-                how = ""
-            if not how:
+            blocked = await page_has_login_ui(page)
+            candidate = ""
+            if not blocked:
                 try:
-                    if cookies_have_session(await context.cookies()):
-                        how = "sessionid cookie"
+                    candidate = await page.evaluate(LOGGED_IN_JS)
                 except Exception:
-                    pass
-            if how:
-                break
+                    candidate = ""
+                if not candidate:
+                    try:
+                        if cookies_have_session(await context.cookies()):
+                            candidate = "sessionid cookie"
+                    except Exception:
+                        pass
+            # 连续 3 次（约 4.5 秒）都判定已登录才收工，避免页面还没渲染就误判
+            if candidate and candidate == last:
+                stable += 1
+                if stable >= 3:
+                    how = candidate
+                    break
+            else:
+                stable = 1 if candidate else 0
+            last = candidate
             await page.wait_for_timeout(1_500)
 
         if not how:
