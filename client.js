@@ -1,5 +1,5 @@
 /**
- * dsh-douyin-whale —— 浏览器半端（设置里的一页，中文名「大肥鱼」）
+ * dsh-douyin-whale —— 浏览器半端（设置里的一页，中文名「大肥鱼刷抖音」）
  * ============================================================================
  * 结构对齐 dsh-douyin-scroll 的做法：
  *   · 整个面板包在 Boundary（error boundary）里 —— 任何子组件抛错只显示
@@ -111,6 +111,7 @@ window.__ModuleLoader__.load({
     function Panel() {
       const [data, setData] = useState(null);
       const [logLines, setLogLines] = useState(null);
+      const [logSource, setLogSource] = useState('plugin');
       const [login, setLogin] = useState(null);
       const [busy, setBusy] = useState('');
       const [msg, setMsg] = useState('');
@@ -167,17 +168,18 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
-      const loadLog = useCallback(async () => {
+      const loadLog = useCallback(async (source) => {
+        const src = source || logSource;
         setBusy('log');
         try {
-          const j = await jget('/log?n=80');
+          const j = await jget(`/log?n=80&source=${src}`);
           setLogLines(j.lines ?? []);
         } catch (e) {
           setMsg(String(e?.message ?? e));
         } finally {
           setBusy('');
         }
-      }, []);
+      }, [logSource]);
 
       const saveConfig = useCallback(async () => {
         setBusy('save');
@@ -253,9 +255,14 @@ window.__ModuleLoader__.load({
                 onClick: () => schedulerAct('stop'),
               }, '停止调度器')
               : h('button', {
-                'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
+                'data-dy2-btn': '', 'data-primary': '',
+                disabled: Boolean(busy) || data?.zcode_available === false,
                 onClick: () => schedulerAct('start'),
-              }, '启动调度器'))),
+              }, '启动本地调度器')),
+          data?.zcode_available === false
+            ? h('div', { 'data-dy2-sub': '' },
+              '没找到 ZCode CLI：独立调度器需要本地 ZCode；当前 DSH 插件模式由值班大脑接管，不需要它。')
+            : null),
 
         /* ── 设置 ── */
         h('div', { 'data-dy2-card': '' },
@@ -336,8 +343,10 @@ window.__ModuleLoader__.load({
                     : login.phase === 'starting' ? '启动中…' : '未登录')
               : null),
           h('div', { 'data-dy2-sub': '' },
-            '掉登录是正常的（抖音会在服务端作废旧会话）。点「出二维码」，然后打开'
-            + '下面给出的 PNG 图片用手机抖音扫；如果出现滑块/短信验证，只能人工完成。'),
+            login?.captcha
+              ? '无头扫码被抖音风控挡住；请按下面提示在有头窗口人工验证后点「刷新状态」。'
+              : '掉登录是正常的（抖音会在服务端作废旧会话）。点「出二维码」，然后打开'
+                + '下面给出的 PNG 图片用手机抖音扫；如果出现滑块/短信验证，只能人工完成。'),
           h('div', { 'data-dy2-row': '' },
             h('button', {
               'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
@@ -349,24 +358,51 @@ window.__ModuleLoader__.load({
             }, '刷新状态')),
           login?.qr
             ? h('div', { 'data-dy2-kv': '' },
-              '二维码图片：', h('span', null, login.qr),
-              h('div', { 'data-dy2-sub': '' }, '用手机抖音「扫一扫」打开这张图片即可'))
+              '二维码：',
+              h('img', {
+                src: `${API}/login/qr.png`,
+                alt: '抖音登录二维码',
+                style: {
+                  display: 'block', width: 180, height: 180, marginTop: 8,
+                  borderRadius: 8, background: '#fff',
+                },
+              }),
+              h('div', { 'data-dy2-sub': '' },
+                '用手机抖音「扫一扫」扫这张图；原图：' + login.qr))
             : null,
           login?.captcha
             ? h('div', { 'data-dy2-badge': 'data-err' },
-              '抖音要求滑块/短信验证 —— 项目不会绕过验证码，请人工处理或稍后再试')
+              '抖音要求滑块/拼图验证 —— 无头模式无法完成。请在有头窗口运行 '
+              + 'python tools/export_login_state.py，人工通过后点「刷新状态」')
             : null,
-          login?.hint
+          login?.hint && !login?.captcha
             ? h('div', { 'data-dy2-sub': '' }, login.hint)
             : null),
 
         /* ── 日志 ── */
         h('div', { 'data-dy2-card': '' },
           h('div', { 'data-dy2-title': '' }, '运行日志',
-            h('span', { 'data-dy2-sub': '' }, '~/.dsh/douyin-whale-scheduler.log')),
+            h('span', { 'data-dy2-sub': '' },
+              logSource === 'plugin'
+                ? '插件值班日志（data/logs）'
+                : '~/.dsh/douyin-whale-scheduler.log')),
           h('div', { 'data-dy2-row': '' },
-            h('button', { 'data-dy2-btn': '', disabled: Boolean(busy), onClick: loadLog },
-              logLines === null ? '看最近日志' : '刷新日志')),
+            h('button', {
+              'data-dy2-btn': '',
+              ...(logSource === 'plugin' ? { 'data-primary': '' } : {}),
+              disabled: Boolean(busy),
+              onClick: () => { setLogSource('plugin'); loadLog('plugin'); },
+            }, '值班日志'),
+            h('button', {
+              'data-dy2-btn': '',
+              ...(logSource === 'scheduler' ? { 'data-primary': '' } : {}),
+              disabled: Boolean(busy),
+              onClick: () => { setLogSource('scheduler'); loadLog('scheduler'); },
+            }, '调度器日志'),
+            h('button', {
+              'data-dy2-btn': '', disabled: Boolean(busy),
+              onClick: () => loadLog(),
+            }, logLines === null ? '读取' : '刷新')),
           logLines !== null
             ? h('div', { 'data-dy2-log': '' },
               logLines.length ? logLines.join('\n') : '（日志是空的）')
@@ -390,7 +426,7 @@ window.__ModuleLoader__.load({
         const slots = (typeof ctx.get === 'function' ? ctx.get('slots') : undefined) || ctx.slots;
         if (!slots) return; // 宿主没有 slots 能力就不显示面板（工具不受影响）
         slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'douyin-whale', order: 32, label: '大肥鱼' },
+          { name: 'settings.section', id: 'douyin-whale', order: 32, label: '大肥鱼刷抖音' },
           () => h(Boundary, null, h(Panel)),
         ));
       },

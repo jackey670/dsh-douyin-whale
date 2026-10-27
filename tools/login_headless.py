@@ -48,11 +48,40 @@ CLICK_LOGIN_JS = r"""
 QR_READY_JS = r"""
 () => {
   const t = (document.body && document.body.innerText) || '';
+  const capEl = document.querySelector(
+    '[class*="captcha"],[id*="captcha"],[class*="verify"],[id*="verify"]');
+  const capFrame = [...document.querySelectorAll('iframe')]
+    .some((f) => /captcha|verify|secsdk/i.test(f.src || ''));
   return JSON.stringify({
     qr_text: t.includes('扫码登录') || t.includes('扫一扫') || t.includes('打开「抖音APP」'),
     phone: t.includes('验证码登录'),
-    captcha: t.includes('拖动') || t.includes('滑块') || !!document.querySelector('[class*="captcha"]'),
+    captcha: t.includes('拖动') || t.includes('滑块') || t.includes('拼图')
+      || t.includes('验证后继续') || !!capEl || capFrame,
   });
+}
+"""
+
+# 整页截图里二维码只占一小块，手机很难扫。找页面上最大的“可见正方形”
+# （img/canvas），裁出二维码 + 16px 静区；找不到就退回整页截图。
+QR_BOX_JS = r"""
+() => {
+  const vw = innerWidth, vh = innerHeight;
+  let best = null;
+  for (const el of document.querySelectorAll('img, canvas')) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 140 || r.height < 140) continue;
+    if (Math.abs(r.width - r.height) > Math.max(r.width, r.height) * 0.2) continue;
+    if (r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh) continue;
+    const score = r.width * r.height;
+    if (!best || score > best.score) best = { score, x: r.left, y: r.top, w: r.width, h: r.height };
+  }
+  if (!best) return '';
+  const pad = 16;
+  const x = Math.max(0, Math.floor(best.x - pad));
+  const y = Math.max(0, Math.floor(best.y - pad));
+  const w = Math.min(vw - x, Math.ceil(best.w + pad * 2));
+  const h = Math.min(vh - y, Math.ceil(best.h + pad * 2));
+  return JSON.stringify({ x, y, w, h });
 }
 """
 
@@ -145,7 +174,46 @@ async def main() -> int:
                 if ready.get("qr_text") or ready.get("phone"):
                     break
 
-            await page.screenshot(path=out_path, full_page=False)
+            # 风控页会直接弹滑块/拼图，无头模式无法完成 —— 别把它当二维码，
+            # 也别干等到 timeout。立刻结束，面板会显示 captcha 提示。
+            if ready.get("captcha"):
+                result["hint"] = (
+                    "抖音要求滑块/拼图验证，无头模式无法完成；请用有头窗口运行 "
+                    "python tools/export_login_state.py 人工通过后重试"
+                )
+                put_status({"phase": "failed", "qr": "", "ok": False,
+                            "captcha": True, "hint": result["hint"]})
+                print(json.dumps({"phase": "failed", "captcha": True,
+                                  "hint": result["hint"]}, ensure_ascii=False), flush=True)
+                return 1
+
+            # 20 秒都没等到二维码/验证码登录界面：别干等 10 分钟，也别把
+            # 风控页当二维码截图。直接失败，让人去有头窗口看。
+            if not (ready.get("qr_text") or ready.get("phone")):
+                result["hint"] = (
+                    "20 秒内没等到二维码/验证码登录界面（可能是滑块/拼图风控或页面改版）；"
+                    "请用有头窗口运行 python tools/export_login_state.py 检查并人工完成"
+                )
+                put_status({"phase": "failed", "qr": "", "ok": False,
+                            "captcha": bool(ready.get("captcha")), "hint": result["hint"]})
+                print(json.dumps({"phase": "failed", "captcha": bool(ready.get("captcha")),
+                                  "hint": result["hint"]}, ensure_ascii=False), flush=True)
+                return 1
+
+            # 优先只截二维码；找不到正方形元素再退回整页
+            try:
+                raw_box = await page.evaluate(QR_BOX_JS)
+                box = json.loads(raw_box) if raw_box else {}
+            except Exception:
+                box = {}
+            if box:
+                await page.screenshot(path=out_path, clip={
+                    "x": box["x"], "y": box["y"],
+                    "width": box["w"], "height": box["h"],
+                })
+                result["qr_cropped"] = True
+            else:
+                await page.screenshot(path=out_path, full_page=False)
             result.update(qr=out_path, click=clicked, qr_ready=bool(ready.get("qr_text")))
             put_status({"phase": "qr", "qr": out_path, "qr_ready": result["qr_ready"],
                         "captcha": bool(ready.get("captcha")), "ok": None})

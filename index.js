@@ -87,7 +87,7 @@ export function apply(ctx, config = {}) {
             /* 日志失败不影响请求 */
           }
         };
-        const handle = createWhaleApi({ log: apiLog });
+        const handle = createWhaleApi({ log: apiLog, dataDir: resolved.dataDir });
         webCtx.effect(() => webServer.register({
           kind: 'prefix',
           path: '/api/douyin-whale',
@@ -135,7 +135,9 @@ export function apply(ctx, config = {}) {
             // 人设已内置在 lib/duty_agent.js 的 DEFAULT_SYSTEM_PROMPT 里；
             // 需要个性化时读 ~/.dsh 配置再拼 personaText 即可。
           });
-          const tick = createWhaleTick({ log: dutyLog, dutyAgent, root: ROOT });
+          const tick = createWhaleTick({
+            log: dutyLog, dutyAgent, root: ROOT, dataDir: resolved.dataDir,
+          });
           agentCtx.effect(() => {
             let disposed = false;
             let timer = null;

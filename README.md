@@ -1,6 +1,6 @@
-# dsh-douyin-whale
+# dsh-douyin-whale — 大肥鱼刷抖音
 
-大肥鱼的抖音工具层：把热榜、搜索、视频内容理解、私信/群聊接入 DSH，另附一个可独立调用的本地 HTTP API，以及一个「主人发视频 → 大肥鱼看完写日记 → 私信回复」的定时调度器。
+大肥鱼刷抖音：把热榜、搜索、视频内容理解、私信/群聊接入 DSH，另附一个可独立调用的本地 HTTP API，以及一个「主人发视频 → 大肥鱼看完写日记 → 私信回复」的定时调度器。
 
 <p>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
@@ -13,7 +13,7 @@
 
 ## English summary
 
-A Douyin toolkit for Dafeiyu (大肥鱼) and DeepSeek Harness (DSH), also usable
+A Douyin toolkit for Dafeiyu (大肥鱼刷抖音) and DeepSeek Harness (DSH), also usable
 from any HTTP client. It reads the hot list, searches videos, downloads videos
 and extracts frames for vision models, sends videos as native share cards, and
 drives web DM/group chat through Playwright — with dry-run **on by default** and
@@ -200,25 +200,29 @@ node scheduler/scheduler.mjs --watch-now
 
 ### 设置页面板
 
-装进 DSH 后，设置里会出现「大肥鱼」一页（`client.js`，宿主注入，无构建步骤）：
+装进 DSH 后，设置里会出现「大肥鱼刷抖音」一页（`client.js`，宿主注入，无构建步骤）：
 运行状态、内容队列（旧→新，带已回复/待回复标记）、配置（主人昵称 / 检查间隔 /
-每日上限 / 时段）、启停调度器、日志 tail。
+每日上限 / 时段）、启停本地调度器、登录引导（二维码内嵌）、日志 tail。
 
 - 面板**只读**运行时状态，状态唯一来源是 `~/.dsh/` 下的文件（调度器维护），
   写操作仅限改配置和启停调度器——**不提供绕过发送闸的发消息入口**。
 - 需要宿主提供 `webServer` / `slots` 两个能力；没有时插件照常工作，只是没有
-  这页（启动时会打一条 `webServer_unavailable` 日志）。
+  这页（启动时会打一条 `webServer_unavailable` 日志）。值班大脑另外需要
+  `agents`，没有时只打日志，工具和面板不受影响。
 - 后端路由挂在 `/api/douyin-whale/*`，接口一览：
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| GET | `/status` | 概览（调度器存活、今日计数、发送闸、队列、记忆） |
+| GET | `/status` | 概览（调度器存活、今日计数、发送闸、队列、记忆、ZCode 是否可用） |
 | GET | `/queue` | 内容队列全量 + 每条状态 |
-| GET | `/log?n=80` | 日志尾部（最多 400 行） |
+| GET | `/log?n=80&source=plugin\|scheduler` | 日志尾部（默认插件值班日志，最多 400 行） |
 | GET | `/config` | 当前配置（含默认值兜底） |
 | POST | `/config` | 改配置（只接受已知字段并钳制范围） |
-| POST | `/scheduler/start` | 静默启动调度器（借 VBS，无窗口） |
+| POST | `/scheduler/start` | 静默启动独立调度器（借 VBS；没装 ZCode 时返回 400） |
 | POST | `/scheduler/stop` | 停止调度器 |
+| GET | `/login/status` | 扫码登录阶段（idle/starting/qr/ok/failed） |
+| GET | `/login/qr.png` | 内嵌二维码（只在扫码进程活着且路径安全时下发） |
+| POST | `/login/qr` | 起一个无头扫码进程 |
 | GET | `/gate`、`/memory` | 发送闸剩余冷却 / 记忆占用 |
 
 ### 不装 DSH 先看面板
@@ -350,11 +354,13 @@ ssh user@server 'chmod 600 ~/dsh-douyin-whale/data/home/.dy/cookies/default.json
 ```bash
 python tools/login_headless.py --timeout 600
 # 打出 {"phase":"qr","qr":".../data/im-shots/login-qr.png"}
-# 打开那个 PNG，用手机抖音扫
+# PNG 已经裁到二维码区域（找不到正方形元素才退回整页），手机直接扫
 ```
 
 ⚠️ 这条只在**不需要滑块验证**时可用——验证码必须有人在真实窗口里操作，项目不会
-也不会尝试绕过它。
+也不会尝试绕过它。登录页如果直接弹滑块/拼图，脚本会在 20 秒内以
+`{"phase":"failed","captcha":true}` 结束并提示改用有头窗口；不会干等超时，
+也不会把风控页当成二维码。面板里的「出二维码」走的是同一个脚本。
 
 ### 怎么判断是「真掉登录」还是页面没加载好
 
