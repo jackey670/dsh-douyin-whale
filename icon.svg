@@ -1,21 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Douyin Tools">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="大肥鱼刷抖音">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1b1035"/>
-      <stop offset="0.55" stop-color="#2d1b5e"/>
-      <stop offset="1" stop-color="#0d2233"/>
+      <stop offset="0" stop-color="#0b1f3a"/>
+      <stop offset="0.55" stop-color="#123d63"/>
+      <stop offset="1" stop-color="#0b2a3d"/>
     </linearGradient>
-    <linearGradient id="note" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4ce0d0"/>
-      <stop offset="0.5" stop-color="#6aa8ff"/>
-      <stop offset="1" stop-color="#ff5fa2"/>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8bdcff"/>
+      <stop offset="0.55" stop-color="#4fb0f5"/>
+      <stop offset="1" stop-color="#2f7fe0"/>
     </linearGradient>
   </defs>
   <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
   <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
-  <path d="M104 78c0-7 6-11 12-8l64 32c7 4 7 14 0 18l-64 32c-6 3-12-1-12-8V78z" fill="url(#note)"/>
-  <path d="M98 184c-14 0-26-9-26-21s12-21 26-21c4 0 8 1 11 2v-42l14 7v49c0 15-11 26-25 26z" fill="url(#note)" opacity="0.95"/>
-  <circle cx="188" cy="186" r="7" fill="#4ce0d0" opacity="0.9"/>
-  <circle cx="206" cy="166" r="5" fill="#6aa8ff" opacity="0.8"/>
-  <circle cx="214" cy="194" r="4" fill="#ff5fa2" opacity="0.85"/>
+
+  <!-- tail -->
+  <path d="M70 142C52 128 36 126 26 132C34 142 36 154 30 168C46 170 62 162 72 150Z" fill="#5aa9f0"/>
+  <!-- body -->
+  <ellipse cx="132" cy="152" rx="68" ry="46" fill="url(#body)"/>
+  <!-- belly -->
+  <path d="M84 176C100 194 120 202 140 202C160 202 178 192 188 176C178 198 158 210 136 210C112 210 92 198 84 176Z" fill="#e0f2fe" opacity="0.9"/>
+  <!-- spout -->
+  <path d="M118 108C112 96 112 84 120 74C120 86 124 94 130 100Z" fill="#a5f3fc"/>
+  <circle cx="118" cy="66" r="5" fill="#a5f3fc" opacity="0.85"/>
+  <circle cx="136" cy="60" r="4" fill="#7dd3fc" opacity="0.7"/>
+  <!-- eye + smile -->
+  <circle cx="176" cy="140" r="6" fill="#0b1f3a"/>
+  <circle cx="178" cy="138" r="2" fill="#ffffff"/>
+  <path d="M186 158C190 162 196 162 200 158" stroke="#0b1f3a" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.65"/>
+  <!-- highlight -->
+  <ellipse cx="116" cy="130" rx="24" ry="10" fill="#ffffff" opacity="0.18" transform="rotate(-14 116 130)"/>
+  <!-- bubbles -->
+  <circle cx="208" cy="100" r="5" fill="#a5f3fc" opacity="0.8"/>
+  <circle cx="218" cy="120" r="4" fill="#7dd3fc" opacity="0.7"/>
+  <circle cx="200" cy="82" r="3" fill="#a5f3fc" opacity="0.6"/>
 </svg>

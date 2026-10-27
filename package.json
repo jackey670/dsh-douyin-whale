@@ -4,6 +4,7 @@
   "description": "大肥鱼刷抖音 — Douyin toolkit for Dafeiyu: hot list, search, video frames, native share cards, guarded DM, local HTTP API, and a scheduler that watches the owner-sent videos and replies.",
   "type": "module",
   "main": "index.js",
+  "icon": "icon.svg",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

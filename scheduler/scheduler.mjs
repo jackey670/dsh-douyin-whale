@@ -38,12 +38,17 @@ const ZCODE_CLI = process.env.ZCODE_CLI || path.join(
   'Programs', 'ZCode', 'resources', 'glm', 'zcode.cjs',
 )
 const ZCODE_NODE = process.env.ZCODE_NODE || process.execPath
-const ZCODE_BUILTIN_PROVIDER = (() => {
-  try {
-    const p = path.resolve(path.dirname(ZCODE_CLI), '..', 'config', 'provider', 'zcode-builtin.json')
-    return fs.existsSync(p) ? p : ''
-  } catch { return '' }
-})()
+// 默认用用户自己的 provider 配置（~/.zcode/v2/provider_config.json）：
+// 模型优先级/配额按用户设置走，也不会为了内置 provider 拉起 ZCode 桌面 app
+// （桌面 app 就是用户看到的大白框）。显式 ZCODE_USE_BUILTIN_PROVIDER=1 才注入。
+const ZCODE_BUILTIN_PROVIDER = process.env.ZCODE_USE_BUILTIN_PROVIDER === '1'
+  ? (() => {
+      try {
+        const p = path.resolve(path.dirname(ZCODE_CLI), '..', 'config', 'provider', 'zcode-builtin.json')
+        return fs.existsSync(p) ? p : ''
+      } catch { return '' }
+    })()
+  : ''
 
 // ── 基础 ────────────────────────────────────────────────────────────────────
 function log(msg) {

@@ -58,8 +58,27 @@ window.__ModuleLoader__.load({
 [data-dy2-input]{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;font-size:12px;
   border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.14));
   background:var(--dsw-alias-bg-overlay,rgba(128,128,128,.12));color:inherit;font-family:inherit;}
+[data-dy2-form]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;}
+[data-dy2-field]{display:flex;flex-direction:column;gap:6px;min-width:0;}
+[data-dy2-field][data-wide]{grid-column:1/-1;}
+[data-dy2-label]{font-size:12px;font-weight:500;line-height:18px;color:var(--dsw-alias-label-secondary,#b9bfc7);}
+[data-dy2-control]{display:flex;align-items:center;gap:8px;min-width:0;}
+[data-dy2-control] [data-dy2-input]{flex:1;min-width:0;}
+[data-dy2-unit]{font-size:12px;color:var(--dsw-alias-label-tertiary,#9aa0a6);white-space:nowrap;}
+[data-dy2-hint]{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9aa0a6);}
+[data-dy2-switch]{display:flex;align-items:flex-start;gap:10px;cursor:pointer;}
+[data-dy2-switch] input{width:16px;height:16px;margin:1px 0 0;accent-color:#3b82f6;cursor:pointer;flex:none;}
+[data-dy2-actions]{display:flex;justify-content:flex-end;gap:8px;}
+@media (max-width:560px){[data-dy2-form]{grid-template-columns:1fr;}}
 [data-dy2-kv]{display:flex;gap:6px;font-size:12px;line-height:20px;flex-wrap:wrap;}
 [data-dy2-k]{color:var(--dsw-alias-label-secondary,#b9bfc7);min-width:72px;}
+[data-dy2-stats]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px;}
+[data-dy2-stat]{display:flex;flex-direction:column;gap:2px;min-width:0;}
+[data-dy2-stat] [data-dy2-k]{min-width:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9aa0a6);}
+[data-dy2-v]{font-size:12px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+[data-dy2-nav] > svg{display:none !important;}
+[data-dy2-nav]::before{content:'🐳';width:16px;font-size:14px;line-height:16px;text-align:center;flex:none;}
+@media (max-width:560px){[data-dy2-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}}
 [data-dy2-badge]{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
   border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.16));}
 [data-dy2-badge][data-ok]{color:#22c55e;border-color:rgba(34,197,94,.5);}
@@ -241,28 +260,39 @@ window.__ModuleLoader__.load({
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
             h('span', { 'data-dy2-sub': '' }, `v1.4.1·b${PANEL_BUILD}`)),
           data
-            ? h('div', { 'data-dy2-kv': '' },
-                h('span', { 'data-dy2-k': '' }, '主人'), h('span', null, data.owner || '（未配置）'),
-                h('span', { 'data-dy2-k': '' }, '今天'), h('span', null, `已回复 ${data.today?.watches ?? 0} 条`),
-                h('span', { 'data-dy2-k': '' }, '队列'),
-                h('span', null, `共 ${queue.total ?? 0} 条，待回复 ${queue.pending ?? 0}`),
-                h('span', { 'data-dy2-k': '' }, '发送闸'),
-                h('span', null, gate.cooldown_remaining_s > 0
-                  ? `冷却中（还剩 ${gate.cooldown_remaining_s} 秒）`
-                  : `正常（最少间隔 ${gate.min_interval_s ?? 30} 秒）`),
+            ? h('div', { 'data-dy2-stats': '' },
+                h('div', { 'data-dy2-stat': '' },
+                  h('span', { 'data-dy2-k': '' }, '主人'),
+                  h('span', { 'data-dy2-v': '' }, data.owner || '（未配置）')),
+                h('div', { 'data-dy2-stat': '' },
+                  h('span', { 'data-dy2-k': '' }, '今天'),
+                  h('span', { 'data-dy2-v': '' }, `已回复 ${data.today?.watches ?? 0} 条`)),
+                h('div', { 'data-dy2-stat': '' },
+                  h('span', { 'data-dy2-k': '' }, '队列'),
+                  h('span', { 'data-dy2-v': '' }, `共 ${queue.total ?? 0} 条 · 待回复 ${queue.pending ?? 0}`)),
+                h('div', { 'data-dy2-stat': '' },
+                  h('span', { 'data-dy2-k': '' }, '发送闸'),
+                  h('span', { 'data-dy2-v': '' }, gate.cooldown_remaining_s > 0
+                    ? `冷却中 · ${gate.cooldown_remaining_s}s`
+                    : `正常 · ≥${gate.min_interval_s ?? 30}s`)),
+                h('div', { 'data-dy2-stat': '' },
+                  h('span', { 'data-dy2-k': '' }, '值班大脑'),
+                  h('span', { 'data-dy2-v': '' }, data.duty_enabled ? '已启用' : '未启用')),
+                h('div', { 'data-dy2-stat': '' },
+                  h('span', { 'data-dy2-k': '' }, '记忆'),
+                  h('span', { 'data-dy2-v': '' }, data.memory?.files
+                    ? `${data.memory.files} 份 · ${Math.round(data.memory.bytes / 1024)} KB`
+                    : '还没有')))
+            : h('div', { 'data-dy2-empty': '' }, busy === 'load' ? '加载中…' : '没有数据'),
+          gate.cooldown_remaining_s > 0 || (data?.today?.loginFails ?? 0) > 0
+            ? h('div', { 'data-dy2-row': '' },
                 gate.cooldown_remaining_s > 0
                   ? h('span', { 'data-dy2-badge': 'data-err' }, gate.blocked_reason || '风控冷却')
                   : null,
-                (data.today?.loginFails ?? 0) > 0
+                (data?.today?.loginFails ?? 0) > 0
                   ? h('span', { 'data-dy2-badge': 'data-err' }, `登录失效 ×${data.today.loginFails}`)
-                  : null,
-                h('span', { 'data-dy2-k': '' }, '值班大脑'),
-                h('span', null, data.duty_enabled
-                  ? '已启用（宿主 agents）'
-                  : '未启用（独立调度器模式）'),
-                h('span', { 'data-dy2-k': '' }, '记忆'),
-                h('span', null, data.memory?.files ? `${data.memory.files} 份 · ${Math.round(data.memory.bytes / 1024)} KB` : '还没有'))
-            : h('div', { 'data-dy2-empty': '' }, busy === 'load' ? '加载中…' : '没有数据'),
+                  : null)
+            : null,
           h('div', { 'data-dy2-row': '' },
             h('button', { 'data-dy2-btn': '', disabled: Boolean(busy), onClick: load }, '刷新'),
             h('button', { 'data-dy2-btn': '', disabled: Boolean(busy), onClick: dutyTest }, '测试值班会话'),
@@ -285,51 +315,62 @@ window.__ModuleLoader__.load({
                 '没找到 ZCode CLI：独立调度器需要本地 ZCode；当前 DSH 插件模式由值班大脑接管，不需要它。')
               : null),
 
-        /* ── 设置 ── */
+        /* ── 运行参数 ── */
         h('div', { 'data-dy2-card': '' },
-          h('div', { 'data-dy2-title': '' }, '设置'),
-          h('div', { 'data-dy2-row': '' },
-            h('div', { 'data-dy2-grow': '' },
-              h('div', { 'data-dy2-sub': '' }, '主人昵称（要和抖音上完全一致）'),
-              h('input', {
-                'data-dy2-input': '', value: nick,
-                onChange: (e) => setNick(e.target.value),
-                placeholder: '例如：漱月鸣筝',
-              }))),
-          h('div', { 'data-dy2-row': '' },
-            h('div', { 'data-dy2-grow': '' },
-              h('div', { 'data-dy2-sub': '' }, `检查间隔（分钟，1–240；现在 ${interval}）`),
-              h('input', {
-                'data-dy2-input': '', type: 'number', min: 1, max: 240,
-                value: interval, onChange: (e) => setIntervalMin(Number(e.target.value) || 10),
-              })),
-            h('div', { 'data-dy2-grow': '' },
-              h('div', { 'data-dy2-sub': '' }, `每日上限（1–200；现在 ${dailyMax}）`),
-              h('input', {
-                'data-dy2-input': '', type: 'number', min: 1, max: 200,
-                value: dailyMax, onChange: (e) => setDailyMax(Number(e.target.value) || 60),
-              }))),
-          h('div', { 'data-dy2-row': '' },
-            h('div', { 'data-dy2-grow': '' },
-              h('div', { 'data-dy2-sub': '' }, '观看时段开始（HH:MM）'),
-              h('input', {
-                'data-dy2-input': '', value: winStart,
-                onChange: (e) => setWinStart(e.target.value),
-              })),
-            h('div', { 'data-dy2-grow': '' },
-              h('div', { 'data-dy2-sub': '' }, '观看时段结束（HH:MM）'),
-              h('input', {
-                'data-dy2-input': '', value: winEnd,
-                onChange: (e) => setWinEnd(e.target.value),
-              }))),
-          h('div', { 'data-dy2-row': '' },
-            h('label', { 'data-dy2-row': '' },
-              h('input', {
-                type: 'checkbox', checked: enabled,
-                onChange: (e) => setEnabled(e.target.checked),
-              }),
-              h('span', { 'data-dy2-sub': '' }, '启用观看（关掉后零 token，只保持状态）')),
-            h('div', { 'data-dy2-grow': '' }),
+          h('div', { 'data-dy2-title': '' }, '运行参数',
+            h('span', { 'data-dy2-sub': '' }, '控制什么时候看私信、看多少')),
+          h('div', { 'data-dy2-form': '' },
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('div', { 'data-dy2-label': '' }, '主人昵称'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', value: nick,
+                  onChange: (e) => setNick(e.target.value),
+                  placeholder: '例如：漱月鸣筝',
+                })),
+              h('div', { 'data-dy2-hint': '' }, '必须和抖音上的昵称完全一致；回复会发给这个人。')),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '检查间隔'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 1, max: 240,
+                  value: interval, onChange: (e) => setIntervalMin(Number(e.target.value) || 10),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '分钟')),
+              h('div', { 'data-dy2-hint': '' }, '1–240；每隔这么久检查一次私信。')),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '每日上限'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 1, max: 200,
+                  value: dailyMax, onChange: (e) => setDailyMax(Number(e.target.value) || 60),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '条 / 天')),
+              h('div', { 'data-dy2-hint': '' }, '1–200；超过后当天不再回复。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('div', { 'data-dy2-label': '' }, '观看时段'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', value: winStart,
+                  onChange: (e) => setWinStart(e.target.value),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '—'),
+                h('input', {
+                  'data-dy2-input': '', value: winEnd,
+                  onChange: (e) => setWinEnd(e.target.value),
+                })),
+              h('div', { 'data-dy2-hint': '' }, 'HH:MM；只在此时段内检查，结束填 24:00 表示全天。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: enabled,
+                  onChange: (e) => setEnabled(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '自动观看'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '关闭后不检查私信、不消耗 token，只保留面板和工具。'))))),
+          h('div', { 'data-dy2-actions': '' },
             h('button', {
               'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
               onClick: saveConfig,
@@ -443,6 +484,22 @@ window.__ModuleLoader__.load({
         style.textContent = CSS;
         document.head.appendChild(style);
         ctx.effect(() => () => style.remove(), 'dsh-douyin-whale: 设置页样式');
+
+        // 设置导航插槽只暴露 label/id，没有图标字段；给本插件按钮打标记，
+        // 再用 CSS 把默认齿轮 SVG 换成小鲸鱼。
+        const markNav = () => {
+          try {
+            for (const b of document.querySelectorAll('button')) {
+              if ((b.textContent || '').includes('大肥鱼刷抖音')) b.setAttribute('data-dy2-nav', '');
+            }
+          } catch { /* DOM 不可用就算了 */ }
+        };
+        if (typeof MutationObserver === 'function' && document.body) {
+          const navObserver = new MutationObserver(markNav);
+          navObserver.observe(document.body, { childList: true, subtree: true });
+          ctx.effect(() => () => navObserver.disconnect(), 'dsh-douyin-whale: 导航图标');
+        }
+        markNav();
 
         const slots = (typeof ctx.get === 'function' ? ctx.get('slots') : undefined) || ctx.slots;
         if (!slots) return; // 宿主没有 slots 能力就不显示面板（工具不受影响）
