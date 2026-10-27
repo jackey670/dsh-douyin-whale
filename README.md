@@ -209,11 +209,13 @@ node scheduler/scheduler.mjs --watch-now
 - 需要宿主提供 `webServer` / `slots` 两个能力；没有时插件照常工作，只是没有
   这页（启动时会打一条 `webServer_unavailable` 日志）。值班大脑另外需要
   `agents`，没有时只打日志，工具和面板不受影响。
+- 值班大脑和独立调度器共用 `~/.dsh` 状态，**二选一**；面板在值班大脑启用时会
+  禁用「启动本地调度器」。值班会话自检只拉会话，不投任务、不发私信。
 - 后端路由挂在 `/api/douyin-whale/*`，接口一览：
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| GET | `/status` | 概览（调度器存活、今日计数、发送闸、队列、记忆、ZCode 是否可用） |
+| GET | `/status` | 概览（调度器存活、今日计数、发送闸、队列、记忆、值班大脑/ZCode 可用性） |
 | GET | `/queue` | 内容队列全量 + 每条状态 |
 | GET | `/log?n=80&source=plugin\|scheduler` | 日志尾部（默认插件值班日志，最多 400 行） |
 | GET | `/config` | 当前配置（含默认值兜底） |

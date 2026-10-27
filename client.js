@@ -256,6 +256,10 @@ window.__ModuleLoader__.load({
                 (data.today?.loginFails ?? 0) > 0
                   ? h('span', { 'data-dy2-badge': 'data-err' }, `登录失效 ×${data.today.loginFails}`)
                   : null,
+                h('span', { 'data-dy2-k': '' }, '值班大脑'),
+                h('span', null, data.duty_enabled
+                  ? '已启用（宿主 agents）'
+                  : '未启用（独立调度器模式）'),
                 h('span', { 'data-dy2-k': '' }, '记忆'),
                 h('span', null, data.memory?.files ? `${data.memory.files} 份 · ${Math.round(data.memory.bytes / 1024)} KB` : '还没有'))
             : h('div', { 'data-dy2-empty': '' }, busy === 'load' ? '加载中…' : '没有数据'),
@@ -269,13 +273,17 @@ window.__ModuleLoader__.load({
               }, '停止调度器')
               : h('button', {
                 'data-dy2-btn': '', 'data-primary': '',
-                disabled: Boolean(busy) || data?.zcode_available === false,
+                disabled: Boolean(busy) || data?.zcode_available === false
+                  || data?.duty_enabled === true,
                 onClick: () => schedulerAct('start'),
               }, '启动本地调度器')),
-          data?.zcode_available === false
+          data?.duty_enabled === true
             ? h('div', { 'data-dy2-sub': '' },
-              '没找到 ZCode CLI：独立调度器需要本地 ZCode；当前 DSH 插件模式由值班大脑接管，不需要它。')
-            : null),
+              '值班大脑已启用：独立调度器与它共用状态文件，二选一，别同时开。')
+            : data?.zcode_available === false
+              ? h('div', { 'data-dy2-sub': '' },
+                '没找到 ZCode CLI：独立调度器需要本地 ZCode；当前 DSH 插件模式由值班大脑接管，不需要它。')
+              : null),
 
         /* ── 设置 ── */
         h('div', { 'data-dy2-card': '' },

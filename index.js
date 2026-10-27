@@ -94,6 +94,7 @@ export function apply(ctx, config = {}) {
         const handle = createWhaleApi({
           log: apiLog,
           dataDir: resolved.dataDir,
+          dutyEnabled: resolved.whaleEnabled !== false,
           dutyProbe: () => (typeof dutyProbe === 'function' ? dutyProbe() : null),
         });
         webCtx.effect(() => webServer.register({

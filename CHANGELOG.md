@@ -39,6 +39,7 @@
 - 二维码截图裁到二维码区域（找不到正方形元素才退回整页），手机更好扫。
 - **值班会话自检**：面板加「测试值班会话」按钮 + `POST /duty/selftest`，只拉会话
   （`agents.get/resume/create`）不投任务；真宿主验证通过（新建 `douyin-whale-duty-v1`）。
+- 状态卡显示值班大脑开关；启用时禁用独立调度器按钮（两者共用状态文件，不能同时跑）。
 - 没装 ZCode 时禁用「启动本地调度器」并说明 DSH 模式不需要它。
 - `npm run check` 覆盖全部运行时 JS（补上 `duty_agent`/`whale_tick`/`services`）。
 
