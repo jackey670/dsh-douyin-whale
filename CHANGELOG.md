@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.4.1 — 2026-10-27
+
+真宿主联调修复：v1.4.0 在 DSH 里实际不可用——设置页看不到插件、面板路由注册失败、
+值班开关关不掉、发布包缺文件。这一版把插件装进 `~/.dsh/profiles/web` 逐项验过。
+
+### 修复
+
+| 现象 | 原因 |
+|---|---|
+| 设置里没有「大肥鱼」入口 | `dsh.client` 缺 `exports["./client"]`，模块系统不下发浏览器半端 |
+| 面板路由注册失败：`cannot get property "webServer" without inject` | Cordis 4 读未 inject 的服务会抛错；改用 `ctx.inject(['webServer'])` 等能力就绪 |
+| `whaleEnabled: false` 不生效 | `resolveConfig` 没把 `whaleEnabled` 放进 resolved，定时器照起 |
+| 装好发布包后 `node douyin.mjs` 报 `ERR_MODULE_NOT_FOUND` | `files` 只写 `lib/*.js`，漏了 `lib/douyin_http_client.mjs` |
+| 面板「出二维码」返回 500（`path` 参数 undefined） | `startLogin` 算了 `statusFile_/logFile_` 却用了未定义的 `statusFile/logFile` |
+| 扫码进程被杀/超时后面板一直显示「等待扫码」 | 状态文件停在 `phase: qr`；`readLoginStatus` 没按进程存活收敛状态，还把过期二维码继续下发 |
+| 面板版本号停在 v1.3.3 | 版本字符串硬编码，没跟 package.json 走 |
+
+### 新增
+
+- `lib/services.js`：可选 Cordis 服务的统一读取（`ctx.reflect.get` 旁路 + 逐级降级），
+  面板和值班大脑都变成「有就接上、没有就降级」，工具始终可用。
+- 发版审计新增三项机械检查：`exports["./client"]` 与 `dsh.client` 成对、
+  面板版本号与 package.json 一致、发布包内每个 js/mjs 的相对 import 都能解析。
+- `startLogin` 的默认状态/日志路径跟随 `root`，补了「不注入也不炸」的回归测试。
+- 删掉一次性脚本 `tools/make-release.mjs`（硬编码 1.4.0，误跑会把版本改回去）。
+
+### 验证
+
+- 真 DSH 0.1.5-rc 宿主（`dsh --profile web`）：插件注册 11 个工具、面板路由 200、
+  设置页「大肥鱼」完整渲染（状态/队列/配置/登录/日志），保存设置与读取日志均可用。
+- 扫码链路：`POST /login/qr` → `starting` → `qr`，产出有效 PNG（167 KB），
+  随后手动终止进程；未登录状态下的 tick 只读私信即安全失败，不发消息。
+- `npm test` 67 项断言全过（22 Python + 45 JS）。
+
 ## 1.4.0 — 2026-10-27
 
 发布版第一刀：**DSH 插件模式闭环**（面板 + 值班大脑 + 登录引导），本地独立调度器（ZCode 版）保留。

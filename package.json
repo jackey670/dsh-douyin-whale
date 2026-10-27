@@ -1,11 +1,12 @@
 {
   "name": "dsh-douyin-whale",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Douyin toolkit for Dafeiyu (大肥鱼): hot list, search, video frames, native share cards, guarded DM, local HTTP API, and a scheduler that watches the owner-sent videos and replies.",
   "type": "module",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
@@ -13,8 +14,11 @@
     "index.js",
     "client.js",
     "lib/*.js",
+    "lib/*.mjs",
+    "!lib/*.test.mjs",
     "douyin.mjs",
     "scheduler/*.mjs",
+    "!scheduler/*.test.mjs",
     "scheduler/tools-deny.txt",
     "scheduler/agent/AGENTS.md",
     "start-whale.cmd",
@@ -30,8 +34,7 @@
     "examples/*.yml",
     "scripts",
     "tools/*.py",
-    "tools/*.mjs",
-    "CHANGELOG.md"
+    "tools/*.mjs"
   ],
   "keywords": [
     "deepseek-harness",

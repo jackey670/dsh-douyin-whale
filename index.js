@@ -8,7 +8,7 @@
  * the only extra Python is an offset flag for search and a small Playwright
  * bridge that drives the system Edge for login and comment.
  */
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Backend, resolveConfig } from './lib/backend.js';
@@ -65,12 +65,21 @@ export function apply(ctx, config = {}) {
     });
 
     // ── 设置页面板（可选宿主能力）──
-    // ctx.webServer 没有时只影响面板，工具照常工作 —— 绝不因它让插件挂掉。
-    try {
-      const webServer =
-        (typeof ctx.get === 'function' ? ctx.get('webServer') : undefined) ??
-        ctx.webServer;
-      if (webServer && typeof webServer.register === 'function') {
+    // webServer 可能比本插件晚就绪，用 ctx.inject 等它；宿主没有这个能力时
+    // 回调永远不执行，工具照常工作 —— 绝不因面板让插件挂掉。
+    // 不能直接 ctx.get / ctx.webServer：没写进静态 inject 会抛错（见 lib/services.js）。
+    const panelFiber = ctx.inject(['webServer'], (webCtx) => {
+      try {
+        const webServer = webCtx.webServer;
+        if (!webServer || typeof webServer.register !== 'function') {
+          backend.log({
+            tool: 'panel',
+            ok: false,
+            event: 'webServer_unavailable',
+            hint: '宿主 webServer 没有 register，设置页面板不可用（工具不受影响）',
+          });
+          return;
+        }
         const apiLog = (message) => {
           try {
             backend.log({ tool: 'panel', ok: true, event: 'api', message });
@@ -79,7 +88,7 @@ export function apply(ctx, config = {}) {
           }
         };
         const handle = createWhaleApi({ log: apiLog });
-        ctx.effect(() => webServer.register({
+        webCtx.effect(() => webServer.register({
           kind: 'prefix',
           path: '/api/douyin-whale',
           handler: async (req, res) => {
@@ -91,73 +100,67 @@ export function apply(ctx, config = {}) {
           },
         }), 'douyin-whale: /api/douyin-whale 路由');
         backend.log({ tool: 'panel', ok: true, event: 'router_registered' });
-      } else {
+      } catch (e) {
         backend.log({
           tool: 'panel',
           ok: false,
-          event: 'webServer_unavailable',
-          hint: '宿主没有提供 webServer 能力，设置页面板不可用（工具不受影响）',
+          event: 'router_error',
+          message: String(e?.message ?? e),
         });
       }
-    } catch (e) {
-      backend.log({
-        tool: 'panel',
-        ok: false,
-        event: 'router_error',
-        message: String(e?.message ?? e),
-      });
-    }
+    });
 
     // ── 值班 tick（发布版的大脑；需要宿主 agents 能力）──
     // agents 不可用时降级：只打日志，工具和面板照常。独立调度器（ZCode 版）
     // 仍是本地执行路径，两者写同一份 ~/.dsh 状态，**不要同时开**。
-    const timerDisposers = [];
-    try {
-      const agentsApi = resolved.whaleEnabled === false
-        ? null
-        : (typeof ctx.get === 'function' ? ctx.get('agents') : ctx.agents);
-      if (agentsApi) {
-        const dutyLog = (message) => {
-          try { backend.log({ tool: 'duty', ok: true, event: 'log', message }); } catch { /* ignore */ }
-        };
-        const dutyAgent = createDutyAgent({
-          ctx,
-          log: dutyLog,
-          sessionId: 'douyin-whale-duty-v1',
-          cwd: resolved.dataDir || path.join(ROOT, 'data'),
-          // 人设已内置在 lib/duty_agent.js 的 DEFAULT_SYSTEM_PROMPT 里；
-          // 需要个性化时读 ~/.dsh 配置再拼 personaText 即可。
-        });
-        const tick = createWhaleTick({ log: dutyLog, dutyAgent, root: ROOT });
-        let disposed = false;
-        let timer = null;
-        const schedule = (afterMs) => {
-          if (disposed) return;
-          timer = setTimeout(async () => {
-            try { await tick(); } catch { /* tick 内部已兜底 */ }
-            schedule(Math.max(1, Number(readConfig(whalePaths()).watch?.intervalMinutes ?? 10) || 10) * 60_000);
-          }, afterMs);
-        };
-        schedule(15_000); // 装载后 15 秒先跑一轮，之后按配置间隔
-        timerDisposers.push(() => { disposed = true; if (timer) clearTimeout(timer); });
-        backend.log({ tool: 'duty', ok: true, event: 'timer_started' });
-      } else {
-        backend.log({
-          tool: 'duty',
-          ok: false,
-          event: 'agents_unavailable',
-          hint: '宿主没有 agents 能力，值班大脑不启动（独立调度器不受影响）',
-        });
-      }
-    } catch (e) {
+    let dutyFiber = null;
+    if (resolved.whaleEnabled === false) {
       backend.log({
-        tool: 'duty', ok: false, event: 'timer_error', message: String(e?.message ?? e),
+        tool: 'duty',
+        ok: true,
+        event: 'disabled',
+        hint: 'whaleEnabled=false，值班大脑不启动（工具与面板不受影响）',
+      });
+    } else {
+      dutyFiber = ctx.inject(['agents'], (agentCtx) => {
+        try {
+          const dutyLog = (message) => {
+            try { backend.log({ tool: 'duty', ok: true, event: 'log', message }); } catch { /* ignore */ }
+          };
+          const dutyAgent = createDutyAgent({
+            ctx: agentCtx,
+            log: dutyLog,
+            sessionId: 'douyin-whale-duty-v1',
+            cwd: resolved.dataDir || join(ROOT, 'data'),
+            // 人设已内置在 lib/duty_agent.js 的 DEFAULT_SYSTEM_PROMPT 里；
+            // 需要个性化时读 ~/.dsh 配置再拼 personaText 即可。
+          });
+          const tick = createWhaleTick({ log: dutyLog, dutyAgent, root: ROOT });
+          agentCtx.effect(() => {
+            let disposed = false;
+            let timer = null;
+            const schedule = (afterMs) => {
+              if (disposed) return;
+              timer = setTimeout(async () => {
+                try { await tick(); } catch { /* tick 内部已兜底 */ }
+                schedule(Math.max(1, Number(readConfig(whalePaths()).watch?.intervalMinutes ?? 10) || 10) * 60_000);
+              }, afterMs);
+            };
+            schedule(15_000); // 装载后 15 秒先跑一轮，之后按配置间隔
+            return () => { disposed = true; if (timer) clearTimeout(timer); };
+          }, 'douyin-whale: duty timer');
+          backend.log({ tool: 'duty', ok: true, event: 'timer_started' });
+        } catch (e) {
+          backend.log({
+            tool: 'duty', ok: false, event: 'timer_error', message: String(e?.message ?? e),
+          });
+        }
       });
     }
 
     return () => {
-      for (const dispose of timerDisposers.reverse()) {
-        try { dispose(); } catch { /* unloading must not throw */ }
+      for (const fiber of [dutyFiber, panelFiber]) {
+        try { fiber?.dispose?.(); } catch { /* unloading must not throw */ }
       }
       for (const dispose of disposers.reverse()) {
         try {

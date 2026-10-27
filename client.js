@@ -8,8 +8,9 @@
  *     改配置和启停调度器。面板不提供绕过发送闸的发消息入口。
  *   · CSS 用宿主的设计令牌（--dsw-alias-*），深浅色自动跟随。
  *
- * ⭐ PANEL_BUILD：每次改完 client.js 就 +1，面板右上角 v1.3.3·b<N> 用来
- *   排「浏览器还在用缓存」的障。
+ * ⭐ PANEL_BUILD：每次改完 client.js 就 +1，面板右上角 v1.4.1·b<N> 用来
+ *   排「浏览器还在用缓存」的障。版本号必须和 package.json 一致 ——
+ *   tools/release-audit.mjs 会机械核对，别让它漂。
  * ============================================================================
  */
 window.__ModuleLoader__.load({
@@ -20,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 2;
+    const PANEL_BUILD = 4;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -224,7 +225,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.3.3·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.4.1·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-kv': '' },
                 h('span', { 'data-dy2-k': '' }, '主人'), h('span', null, data.owner || '（未配置）'),
