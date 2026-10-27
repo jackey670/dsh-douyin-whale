@@ -24,6 +24,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
 const HOME = process.env.USERPROFILE || os.homedir()
 const DSH_HOME = process.env.DSH_HOME || path.join(HOME, '.dsh')
+// 调度器用独立的 ZCode home：默认 home 会连上桌面 app 的 app-server，
+// 每次唤醒都可能把 ZCode 窗口带出来。独立 home 下 CLI 自己起后台 app-server。
+const ZCODE_SCHEDULER_HOME = process.env.ZCODE_SCHEDULER_HOME
+  || path.join(HOME, '.zcode-scheduler')
 const CFG_FILE = process.env.DOUYIN_WHALE_CONFIG || path.join(DSH_HOME, 'douyin-whale.config.json')
 const AGENT_DIR = path.join(HERE, 'agent')
 const STATE_FILE = path.join(DSH_HOME, 'douyin-whale-state.json')
@@ -163,6 +167,7 @@ function wakeAgent(text, tag = 'wake') {
         cwd: AGENT_DIR, windowsHide: true,
         env: {
           ...process.env,
+          ZCODE_HOME: ZCODE_SCHEDULER_HOME,
           ...(ZCODE_BUILTIN_PROVIDER ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: ZCODE_BUILTIN_PROVIDER } : {}),
           DOUYIN_WHALE_CONFIG: CFG_FILE,
         },
