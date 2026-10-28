@@ -212,6 +212,7 @@ class IMSendReq(BaseModel):
     to: str
     text: str
     send: bool = False
+    image: str = ""  # 表情包图片绝对路径；必须落在图库白名单目录里
 
 
 class IMGroupSendReq(BaseModel):
@@ -693,7 +694,8 @@ def _im_text(text: str, limit: int = 500) -> str:
     return t
 
 
-def _im_do_send(cmd: str, flag: str, target: str, text: str, want_send: bool) -> dict:
+def _im_do_send(cmd: str, flag: str, target: str, text: str, want_send: bool,
+                 image: str = "") -> dict:
     """send / group-send 共用：校验入参 → 双开关判定 → 调驱动 → 补执行模式。"""
     target = (target or "").strip()
     if not target:
@@ -707,6 +709,9 @@ def _im_do_send(cmd: str, flag: str, target: str, text: str, want_send: bool) ->
     do_send = bool(want_send) and allow
     # 用 --opt=value 形式：文本里带空格/短横线/中文都不会被 argparse 误当成选项
     args = [cmd, f"--{flag}={target}", f"--text={body}"]
+    if cmd == "send" and image:
+        # 表情包图片：白名单校验在 douyin_im.py 里做（这里只透传，--opt=value 防空格问题）
+        args.append(f"--image={image}")
     if do_send:
         args.append("--send")
 
@@ -744,8 +749,8 @@ def im_groups(req: IMConvReq | None = None):
 
 @app.post("/im/send")
 def im_send(req: IMSendReq):
-    """给单个用户发私信。默认 dry-run（只填框 + 截图 + 清空）。"""
-    return _im_do_send("send", "to", req.to, req.text, req.send)
+    """给单个用户发私信（可选附带表情包图片）。默认 dry-run；双闸见模块 docstring。"""
+    return _im_do_send("send", "to", req.to, req.text, req.send, image=req.image)
 
 
 @app.post("/im/group-send")

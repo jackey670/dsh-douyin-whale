@@ -166,6 +166,46 @@ try {
     ok('⑧ 队列上限保留最近 50 条');
   }
 
+  // ⑨ sticker 入队：image_id 做 id；无图的 sticker 丢弃；重复只进一次
+  {
+    const q = mergeQueue([], [
+      { kind: 'sticker', image_id: 'S1', image_url: 'https://x/y.webp' },
+      { kind: 'sticker' },
+      { kind: 'sticker', image_id: 'S1', image_url: 'https://x/y.webp' },
+    ]);
+    assert.equal(q.length, 1);
+    assert.equal(q[0].id, 'S1');
+    assert.equal(q[0].kind, 'sticker');
+    assert.equal(q[0].item_id, '');
+    assert.equal(q[0].image_url, 'https://x/y.webp');
+    // 没有 image_id 时用内容哈希兜底
+    const q2 = mergeQueue([], [{ kind: 'sticker', image_url: 'https://x/z.webp' }]);
+    assert.match(q2[0].id, /^stk:/);
+    ok('⑨ sticker 入队 + 去重 + 丢弃无图项');
+  }
+
+  // ⑩ 提示词：sticker 任务带图片路径和 meme pick；memeAllowed 控制表情提示
+  {
+    const base = { ownerNick: '主人', pendingCount: 1, root: 'C:/repo', home: 'C:/dsh' };
+    const sticker = buildTaskPrompt({
+      ...base, memeAllowed: false,
+      item: { id: 'S1', kind: 'sticker', image_url: 'https://x/y.webp', image_path: 'C:/dm/a.webp' },
+    });
+    assert.match(sticker, /C:\/dm\/a\.webp/);
+    assert.match(sticker, /meme pick/);
+    assert.doesNotMatch(text_of(base), /表情包/);   // 不允许时文字任务不提表情包
+
+    function text_of(b) {
+      return buildTaskPrompt({ ...b, memeAllowed: false, item: { id: 'text:1', kind: 'text', text: '在吗' } });
+    }
+    const withMeme = buildTaskPrompt({
+      ...base, memeAllowed: true, item: { id: 'text:2', kind: 'text', text: '在吗' },
+    });
+    assert.match(withMeme, /表情包/);
+    assert.match(withMeme, /--image/);
+    ok('⑩ sticker 提示词 + memeAllowed 开关');
+  }
+
   console.log(`\nALL PASSED (${pass})`);
 } finally {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }

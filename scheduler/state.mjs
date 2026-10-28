@@ -44,9 +44,11 @@ export function normalizeQueue(queue) {
     .map((q) => ({
       id: String(q.id || q.item_id),
       item_id: String(q.item_id || (String(q.id || '').startsWith('text:') ? '' : q.id)),
-      kind: q.kind === 'video' || q.kind === 'note' ? q.kind : 'text',
+      kind: ['video', 'note', 'sticker'].includes(q.kind) ? q.kind : 'text',
       title: String(q.title || '').slice(0, 140),
       text: String(q.text || '').slice(0, 300),
+      image_url: String(q.image_url || '').slice(0, 600),
+      image_id: String(q.image_id || ''),
       seen_at: q.seen_at || new Date(0).toISOString(),
       attempts: Number(q.attempts) || 0,
       last_error: String(q.last_error || ''),
@@ -61,13 +63,14 @@ export function readState(file, now = new Date()) {
   if (raw.date !== today(now)) {
     // 跨天：只重置当天计数，保留 repliedIds / queue
     return {
-      date: today(now), watches: 0, repliedIds, queue,
+      date: today(now), watches: 0, memes: 0, repliedIds, queue,
       loginFails: 0, loginBlockedUntil: '',
     };
   }
   return {
     date: raw.date,
     watches: Number(raw.watches) || 0,
+    memes: Number(raw.memes) || 0,
     repliedIds,
     queue,
     loginFails: Number(raw.loginFails) || 0,
@@ -98,7 +101,8 @@ export function capRepliedIds(ids, max = 300) {
  * 把本轮读到的主人消息并进队列。
  *
  * items 必须是**旧→新**（douyin_im.py 已经排好）。带 item_id 的算卡片
- * （video/note），不带 item_id 但有正文的算 text。同一个 id 只进一次。
+ * （video/note），aweType 501 的算 sticker，其余有正文的算 text。
+ * 同一个 id 只进一次。
  */
 export function mergeQueue(queue, items, { max = 50, now = new Date() } = {}) {
   const base = normalizeQueue(queue);
@@ -106,20 +110,31 @@ export function mergeQueue(queue, items, { max = 50, now = new Date() } = {}) {
   const at = now.toISOString();
   for (const it of items || []) {
     if (!it) continue;
-    const kind = it.kind === 'video' ? 'video' : it.kind === 'note' ? 'note' : 'text';
+    const kind = ['video', 'note', 'sticker'].includes(it.kind) ? it.kind : 'text';
     const itemId = String(it.item_id || '');
     const text = String(it.text || '').trim();
-    if (kind !== 'text' && !itemId) continue;
-    if (kind === 'text' && !text) continue;
-    const id = kind === 'text' ? textId(it.from, text) : itemId;
+    const imageId = String(it.image_id || '');
+    const imageUrl = String(it.image_url || '');
+    if (kind === 'sticker') {
+      if (!imageId && !imageUrl) continue;
+    } else if (kind === 'text') {
+      if (!text) continue;
+    } else if (!itemId) {
+      continue;
+    }
+    const id = kind === 'sticker'
+      ? (imageId || `stk:${textId('', imageUrl || imageId)}`)
+      : kind === 'text' ? textId(it.from, text) : itemId;
     if (seen.has(id)) continue;
     seen.add(id);
     base.push({
       id,
-      item_id: kind === 'text' ? '' : itemId,
+      item_id: kind === 'text' || kind === 'sticker' ? '' : itemId,
       kind,
       title: String(it.title || '').slice(0, 140),
       text: kind === 'text' ? text.slice(0, 300) : '',
+      image_url: kind === 'sticker' ? imageUrl.slice(0, 600) : '',
+      image_id: kind === 'sticker' ? imageId : '',
       seen_at: at,
       attempts: 0,
       last_error: '',

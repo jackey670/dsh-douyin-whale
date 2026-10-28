@@ -285,9 +285,26 @@ async function tick({ manual = false } = {}) {
     }
 
     const next = pending[0];
+    // 表情包回复前先把对方发的图下载到本地，模型才能 Read 看画面
+    if (next.kind === 'sticker' && next.image_url && !next.image_path) {
+      const dl = spawnSync(process.execPath, [
+        path.join(ROOT, 'douyin.mjs'), 'dm-image', '--url', next.image_url,
+      ], { encoding: 'utf8', timeout: 90_000, windowsHide: true });
+      try {
+        const j = JSON.parse((dl.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() || '{}');
+        if (j.ok) next.image_path = j.path;
+        else log(`[tick] 表情图下载失败：${j.error ?? 'unknown'}`);
+      } catch { log('[tick] 表情图下载输出不是 JSON'); }
+    }
     const meBefore = meTextSet(dm);
     const mem = dmContext(DSH_HOME, ownerNick);
-    log(`[tick] 队列 ${queued.length} 条，待回复 ${pending.length} 条 → 处理 ${next.id}（${next.kind}，第 ${(next.attempts || 0) + 1} 次）`
+    // 表情包：按配置的概率允许本轮带图；sticker（主人发的表情）必须带图回敬
+    const memeCfg = cfg.meme ?? {};
+    const memeAllowed = next.kind === 'sticker'
+      || (memeCfg.enabled !== false
+        && Math.random() < (Number(memeCfg.probability) || 0.3)
+        && (merged.memes ?? 0) < (Number(memeCfg.maxPerDay) || 6));
+    log(`[tick] 队列 ${queued.length} 条，待回复 ${pending.length} 条 → 处理 ${next.id}（${next.kind}，第 ${(next.attempts || 0) + 1} 次${memeAllowed ? '，可带表情' : ''}）`
       + (mem ? `（记忆 ${mem.total_remembered} 条）` : ''));
 
     // 每轮只允许发一条：写标记，douyin.mjs send 读它并在发过一条后拒绝第二条。
@@ -296,6 +313,7 @@ async function tick({ manual = false } = {}) {
       item: next, ownerNick, pendingCount: pending.length, mem,
       root: ROOT, home: DSH_HOME,
       persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle },
+      memeAllowed,
     }), 'watch');
     const marker = readWakeMarker();
     endWakeMarker();
@@ -319,6 +337,7 @@ async function tick({ manual = false } = {}) {
         const newSt = readState();
         newSt.repliedIds = capRepliedIds([...(newSt.repliedIds ?? []), next.id]);
         newSt.watches = (newSt.watches ?? 0) + 1;
+        if (marker?.image) newSt.memes = (newSt.memes ?? 0) + 1;
         writeState(newSt);
         // 把这一轮读到的会话合并进本地记忆（只存本机，不进仓库/日志）
         try {

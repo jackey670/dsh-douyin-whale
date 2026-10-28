@@ -1178,6 +1178,151 @@ async def confirm_sent(page, text: str, before_count: int | None = None,
     )
 
 
+# 选完文件后弹出的发送确认模态框（2026-10-28 实测）：
+#   标题「发送给 ××」+ 缩略图 + caption 输入框（placeholder「有什么想和朋友说的...」）
+#   + 「取消」和「发送 (N)」两个按钮。注意 scope 是整个 document，
+#   composer 容器里已有的聊天图片（MessageItemEmojiimage）会造成假阳性。
+MODAL_JS = r"""
+() => {
+  const norm = (s) => String(s || '').replace(/\s+/g, '');
+  const cls = (el) => String(el && (el.className && el.className.baseVal !== undefined
+    ? el.className.baseVal : el.className) || '');
+  const btns = [...document.querySelectorAll('button')];
+  const send = btns.find((b) => {
+    const t = norm(b.innerText);
+    return t.startsWith('发送') && t.length <= 8 && t !== '发送消息';
+  });
+  const cancel = btns.find((b) => norm(b.innerText) === '取消');
+  const caption = [...document.querySelectorAll('textarea, [contenteditable="true"]')]
+    .map((el) => ({tag: el.tagName, cls: cls(el).slice(0, 140),
+                   ph: el.getAttribute('placeholder') || ''}))
+    .find((e) => /朋友说|想和/.test(e.ph)) || null;
+  const title = [...document.querySelectorAll('div,span,h2,h3')]
+    .map((el) => norm(el.innerText || ''))
+    .find((t) => t.startsWith('发送给') && t.length < 40) || '';
+  return {
+    found: Boolean(send),
+    title, send_text: send ? (send.innerText || '').trim() : '',
+    send_cls: send ? cls(send) : '', cancel: Boolean(cancel), caption,
+  };
+}
+"""
+
+# 点模态框里的「发送 (N)」或「取消」
+CLICK_MODAL_BTN_JS = r"""
+(want) => {
+  const norm = (s) => String(s || '').replace(/\s+/g, '');
+  for (const b of document.querySelectorAll('button')) {
+    const t = norm(b.innerText);
+    const hit = want === 'send'
+      ? (t.startsWith('发送') && t.length <= 8 && t !== '发送消息')
+      : (t === '取消');
+    if (!hit) continue;
+    for (const ev of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      b.dispatchEvent(new MouseEvent(ev, { bubbles: true, cancelable: true, view: window }));
+    }
+    return true;
+  }
+  return false;
+}
+"""
+
+
+async def attach_image(page, image_path: str, wait_ms: int = 15_000) -> dict:
+    """把本地图片塞进聊天上传 input（set_input_files），等「发送给」模态框出现。
+
+    返回模态框信息（标题/发送按钮/caption 输入框）；found=False 说明上传
+    没起来（前端改版或文件被拒），调用方不要盲目点发送。
+    """
+    sel = None
+    for s in UPLOAD_INPUTS:
+        try:
+            if await page.locator(s).first.count():
+                sel = s
+                break
+        except Exception:
+            continue
+    if not sel:
+        raise IMError(
+            "NO_UPLOAD_INPUT",
+            "聊天页里找不到文件上传 input（前端改版？跑 tools/probe_composer.py 对照更新 UPLOAD_INPUTS）",
+        )
+    await page.locator(sel).first.set_input_files(image_path)
+    deadline = time.monotonic() + wait_ms / 1000
+    modal: dict = {}
+    while time.monotonic() < deadline:
+        try:
+            modal = await page.evaluate(MODAL_JS)
+        except Exception as e:
+            modal = {"error": str(e)[:120]}
+        if modal.get("found"):
+            break
+        await page.wait_for_timeout(500)
+    return modal
+
+
+async def type_modal_caption(page, text: str) -> bool:
+    """往「发送给」模态框的 caption 输入框里打字。打不进去返回 False（只发图）。"""
+    try:
+        cap = page.locator(
+            'textarea[placeholder*="朋友说"], [placeholder*="朋友说"], '
+            'textarea[placeholder*="想和"], [placeholder*="想和"]'
+        ).first
+        if not await cap.count():
+            return False
+        await cap.click(timeout=3000)
+        await cap.fill("")
+        await page.keyboard.insert_text(text)
+        await page.wait_for_timeout(400)
+        got = await cap.input_value() if await cap.evaluate(
+            "el => el.tagName === 'TEXTAREA'") else await cap.inner_text()
+        return text[:10] in (got or "")
+    except Exception:
+        return False
+
+
+async def confirm_image_sent(page, caption: str, media_before: int | None,
+                             text_before: int | None,
+                             timeout_ms: int = 20_000) -> dict:
+    """图片消息的发送确认。
+
+    主判据：**「我发的」媒体消息条数 +1**（媒体没有 text/itemId，
+    count_my_matching 数不到）。caption 若作为文字一起出现（合成一条或
+    拆成第二条）会记录在 text_after 里供参考，但不作为必要条件。
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    media_after = media_before
+    text_after = text_before
+    last_error = ""
+    while time.monotonic() < deadline:
+        for f in FAILURE_MARKERS:
+            if await page.locator(f).first.count():
+                raise IMError("SEND_FAILED", "页面出现「发送失败/重试」，图片未送达")
+        msgs = await read_messages(page)
+        if msgs is not None:
+            media_after = count_my_media(msgs)
+            text_after = count_my_matching(msgs, caption) if caption else text_before
+            if media_before is None or media_after > media_before:
+                return {
+                    "readback": True,
+                    "media_before": media_before,
+                    "media_after": media_after,
+                    "text_before": text_before,
+                    "text_after": text_after,
+                    "judge": "media_count",
+                }
+        else:
+            last_error = "fiber 读不到"
+        await page.wait_for_timeout(400)
+    raise IMError(
+        "SEND_UNCONFIRMED",
+        f"图片已触发发送但未确认（我发的媒体消息 {media_before}→{media_after}"
+        + (f"，caption 匹配 {text_before}→{text_after}" if caption else "")
+        + (f"，{last_error}" if last_error else "")
+        + "）；请人工核实，勿自动重试",
+    )
+
+
 async def screenshot(page, name: str) -> str:
     os.makedirs(SHOT_DIR, exist_ok=True)
     safe = re.sub(r"[^\w\u4e00-\u9fa5-]+", "_", name)[:30]
@@ -1380,11 +1525,15 @@ async def cmd_conversations(cookie_file: str | None, limit: int, groups_only: bo
 
 
 async def cmd_send(cookie_file: str | None, target: str, text: str, do_send: bool,
-                   want_shot: bool, expect_group: bool = False) -> dict:
+                   want_shot: bool, expect_group: bool = False,
+                   image: str | None = None) -> dict:
+    # caption 必填：表情包回复也要有一句话（回读按文本核对，人也更爱看）
     if not text.strip():
         raise IMError("BAD_INPUT", "text 不能为空")
+    image_path = validate_image_path(image) if image else None
+    gate_kind = "image" if image_path else "text"
     if do_send:
-        check_send_gate("text")  # 冷却中/间隔太短就不开浏览器了，直接拒
+        check_send_gate(gate_kind)  # 冷却中/间隔太短就不开浏览器了，直接拒
     async with open_browser(cookie_file) as page:
         await ensure_chat_page(page)
         title = await open_conversation(page, target)
@@ -1395,16 +1544,55 @@ async def cmd_send(cookie_file: str | None, target: str, text: str, do_send: boo
                 "NOT_GROUP",
                 f"打开的会话「{title}」与群「{target}」不匹配（不像是该群），已中止，未输入任何内容",
             )
-        editor_sel, publish_ready = await type_message(page, text)
         result = {
             "target": target,
             "resolved_title": title,
             "text": text,
-            "editor_selector": editor_sel,
-            "publish_button_ready": publish_ready,
+            "image": image_path or None,
+            "kind": gate_kind,
             "dry_run": not do_send,
             "sent": False,
         }
+
+        if image_path:
+            # 先取基线再动页面：媒体条数 + caption 匹配条数都要「发送前」的值
+            pre = await read_messages(page)
+            media_before = count_my_media(pre)
+            text_before = count_my_matching(pre, text) if pre is not None else None
+            modal = await attach_image(page, image_path)
+            result["modal"] = modal
+            if not modal.get("found"):
+                result["attach_failed"] = True
+                raise IMError(
+                    "ATTACH_FAILED",
+                    "选入图片后「发送给」弹窗没有出现（前端改版或格式被拒），已放弃，未发送",
+                )
+            result["caption_typed"] = await type_modal_caption(page, text)
+            result["screenshot_composed"] = await screenshot(page, target) if want_shot else ""
+            if do_send:
+                clicked = await page.evaluate(CLICK_MODAL_BTN_JS, "send")
+                if not clicked:
+                    raise IMError("SEND_FAILED", "找不到「发送 (N)」按钮，图片未发送")
+                result["trigger"] = "modal_send_btn"
+                result.update(await confirm_image_sent(page, text, media_before, text_before))
+                result["sent"] = True
+                record_send("image")
+                result["screenshot"] = await screenshot(page, target + "_sent") if want_shot else ""
+            else:
+                cancelled = await page.evaluate(CLICK_MODAL_BTN_JS, "cancel")
+                if not cancelled:
+                    await page.keyboard.press("Escape")
+                result["cleared"] = True
+                result["composer_left"] = await composer_text(page)
+                if want_shot:
+                    result["screenshot"] = await screenshot(page, target + "_dryrun")
+            return result
+
+        editor_sel, publish_ready = await type_message(page, text)
+        result.update({
+            "editor_selector": editor_sel,
+            "publish_button_ready": publish_ready,
+        })
         # 清空前先留证：这张图能看到文本确实进了输入框
         result["screenshot_composed"] = await screenshot(page, target) if want_shot else ""
         if do_send:
@@ -1675,6 +1863,63 @@ VIDEO_URL_RE = re.compile(
 # 分享卡片的 aweType。普通文字消息上也有 aweType（实测 700），
 # 只有 800 才是视频/图文卡片 —— 不能拿「有没有 awe」判断。
 AWE_TYPE_CARD = 800
+# 收藏表情/贴纸（personal_upload 的 webp，带 CDN 直链）。
+# 2026-10-28 实测：parsedContent 有 emoji_type/sticker_type/url{uri,url_list,width,height}，
+# 没有 text/itemId —— 所以「无文字无 itemId」的消息要看这个值，不能当空消息丢掉。
+AWE_TYPE_STICKER = 501
+
+# 聊天输入区的文件上传 input（2026-10-28 实测，semi-upload 组件）。
+# accept=".jpg,.jpeg,.png,.gif,.mp4"；-replace 是替换预览用的第二个 input。
+UPLOAD_INPUTS = (
+    'input.semi-upload-hidden-input',
+    'input.semi-upload-hidden-input-replace',
+)
+# 表情包图片白名单：扩展名和大小上限（accept 里没有 webp，但程序化 set_input_files
+# 不受选择器过滤限制，实测抖音吃 webp 字节；保守起见 webp 也放行，由预览判成败）
+MEME_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+MEME_MAX_BYTES = 2 * 1024 * 1024
+
+
+def meme_roots() -> list[str]:
+    """表情包图片允许来自的目录（ realpath 白名单）。"""
+    roots = []
+    for part in (os.environ.get("DOUYIN_MEME_ROOTS") or "").split(os.pathsep):
+        p = part.strip()
+        if p:
+            roots.append(p)
+    roots.append(os.path.join(os.path.expanduser("~"), ".dsh", "meme-packs"))
+    out = []
+    for r in roots:
+        rp = os.path.realpath(r)
+        if os.path.isdir(rp) and rp not in out:
+            out.append(rp)
+    return out
+
+
+def validate_image_path(raw: str) -> str:
+    """表情包路径白名单：必须在图库目录里、扩展名/大小合规。返回 realpath。"""
+    p = os.path.realpath(str(raw or "").strip())
+    if not p or not os.path.isfile(p):
+        raise IMError("BAD_INPUT", f"图片不存在：{raw!r}")
+    if os.path.splitext(p)[1].lower() not in MEME_EXTS:
+        raise IMError("BAD_INPUT", f"图片扩展名不支持（只允许 {'/'.join(sorted(MEME_EXTS))}）：{p}")
+    size = os.path.getsize(p)
+    if size <= 0 or size > MEME_MAX_BYTES:
+        raise IMError("BAD_INPUT", f"图片大小 {size} 字节超出限制（0, {MEME_MAX_BYTES}]")
+    roots = meme_roots()
+    if not roots:
+        # fail-closed：没有图库目录就一律拒发，绝不能退化成「任意路径都行」
+        raise IMError(
+            "IMAGE_NOT_ALLOWED",
+            "没有可用的表情包图库目录（~/.dsh/meme-packs 不存在且未配置 DOUYIN_MEME_ROOTS），拒绝发送",
+        )
+    if not any(p == r or p.startswith(r + os.sep) for r in roots):
+        raise IMError(
+            "IMAGE_NOT_ALLOWED",
+            "图片不在表情包目录白名单里（DOUYIN_MEME_ROOTS / ~/.dsh/meme-packs），拒绝发送："
+            + p,
+        )
+    return p
 
 # 从 React fiber 里读结构化消息。
 #
@@ -1757,6 +2002,11 @@ READ_MESSAGES_JS = r"""
       awe: Number(pc.aweType) || 0,
       item: pc.itemId ? String(pc.itemId) : '',
       type: String(pc.type || ''),
+      // 收藏表情/贴纸（aweType 501）：没有 text/itemId，靠这几个字段识别和下载
+      img_uri: (pc.url && pc.url.uri) ? String(pc.url.uri) : '',
+      img_url: (pc.url && Array.isArray(pc.url.url_list) && pc.url.url_list.length)
+        ? String(pc.url.url_list[0]) : '',
+      img_id: pc.image_id ? String(pc.image_id) : '',
       top: Math.round(r.top),
     });
   });
@@ -1851,6 +2101,23 @@ def count_my_matching(msgs: list[dict], text: str) -> int:
     return n
 
 
+def count_my_media(msgs: list[dict] | None) -> int | None:
+    """「我发的」媒体消息（表情/贴纸/图片）条数；fiber 读不到返回 None。
+
+    这类消息没有 text 也没有 item_id，count_my_matching 数不到它们，
+    发图片后的回读确认要用这个计数。
+    """
+    if msgs is None:
+        return None
+    return sum(
+        1 for m in msgs
+        if m.get("from") == "me"
+        and (m.get("image_uri") or m.get("image_id")
+             # 没有 img 字段的老前端结构：无文字无 item 的也算媒体
+             or ((m.get("text") or "").strip() == "" and not m.get("item_id")))
+    )
+
+
 def _fallback_text_lines(chat_text: str) -> list[str]:
     """fiber 读不到时的兜底：按行切纯文本。"""
     out = []
@@ -1904,9 +2171,13 @@ async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dic
         for m in raw_msgs:
             awe = int(m.get("awe") or 0)
             item_id = m.get("item") or ""
-            # aweType: 800 = 视频卡片；0 但带 itemId = 图文；700 = 普通文字
+            img_uri = m.get("img_uri") or ""
+            img_url = m.get("img_url") or ""
+            # aweType: 800 = 视频卡片；501 = 收藏表情/贴纸；0 但带 itemId = 图文；700 = 普通文字
             if awe == AWE_TYPE_CARD:
                 kind = "video"
+            elif awe == AWE_TYPE_STICKER or (img_uri and not item_id):
+                kind = "sticker"
             elif item_id:
                 kind = "note"
             else:
@@ -1919,6 +2190,9 @@ async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dic
                 "item_id": item_id,
                 "title": m.get("title") or "",
                 "sender_basis": m.get("sender_basis") or "",
+                "image_uri": img_uri,
+                "image_url": img_url,
+                "image_id": m.get("img_id") or "",
             })
 
         # 主人发来的内容（视频 + 图文）：只要带 itemId 就算一条，旧 → 新
@@ -2000,6 +2274,8 @@ def main(argv=None) -> int:
     p_send = sub.add_parser("send")
     p_send.add_argument("--to", required=True)
     p_send.add_argument("--text", required=True)
+    p_send.add_argument("--image", default="",
+                        help="附带本地图片（白名单：DOUYIN_MEME_ROOTS / ~/.dsh/meme-packs）")
     p_send.add_argument("--send", action="store_true", help="真实发送（另需 DOUYIN_IM_ALLOW_SEND=1）")
     p_send.add_argument("--screenshot", action="store_true", default=True)
 
@@ -2087,7 +2363,8 @@ def main(argv=None) -> int:
             if args.cmd == "groups":
                 return await cmd_conversations(cookie_file, args.limit, True)
             if args.cmd == "send":
-                return await cmd_send(cookie_file, args.to, args.text, do_send, True)
+                return await cmd_send(cookie_file, args.to, args.text, do_send, True,
+                                      image=getattr(args, "image", "") or "")
             if args.cmd == "group-send":
                 return await cmd_group_send(cookie_file, args.group, args.text, do_send, True)
             if args.cmd == "read":

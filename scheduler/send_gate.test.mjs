@@ -28,6 +28,8 @@ fs.writeFileSync(stub, [
   'const c = process.env.STUB_COUNT;',
   'const n = fs.existsSync(c) ? Number(fs.readFileSync(c, "utf8") || 0) : 0;',
   'fs.writeFileSync(c, String(n + 1));',
+  'const argvLog = process.env.STUB_ARGV;',
+  'if (argvLog) fs.appendFileSync(argvLog, JSON.stringify(process.argv.slice(2)) + "\\n");',
   'console.log(JSON.stringify({ ok: true, sent: true }));',
 ].join('\n'), 'utf8');
 
@@ -37,6 +39,7 @@ const env = {
   DOUYIN_PYTHON: process.execPath,
   DOUYIN_IM_SCRIPT: stub,
   STUB_COUNT: counter,
+  STUB_ARGV: path.join(dir, 'argv.log'),
   DOUYIN_HEADLESS: '1',
 };
 
@@ -97,6 +100,30 @@ try {
     assert.equal(r.status, 0);
     assert.equal(calls(), 4);
     ok('③ 过期标记不拦发送');
+  }
+
+  // ④ --image 透传 + 标记记 image:true
+  {
+    const m = marker();
+    m.sent = false;
+    m.expires_at = new Date(Date.now() + 10 * 60_000).toISOString();
+    fs.writeFileSync(markerFile, JSON.stringify(m), 'utf8');
+    const img = path.join(dir, 'fake-pack.jpg');
+    fs.writeFileSync(img, 'fake', 'utf8');
+    const r = spawnSync(process.execPath, [
+      douyinMjs, 'send', '--to', '测试主人', '--text', '带图回复', '--image', img, '--send',
+    ], { env, encoding: 'utf8', timeout: 60_000 });
+    assert.equal(r.status, 0);
+    const argvs = fs.readFileSync(path.join(dir, 'argv.log'), 'utf8').trim().split('\n');
+    const last = JSON.parse(argvs.at(-1));
+    assert.equal(last[0], 'send');
+    assert.ok(last.includes('--image'), 'python 必须收到 --image');
+    assert.ok(last.some((a) => a.endsWith('fake-pack.jpg')));
+    const m2 = marker();
+    assert.equal(m2.image, true, '标记要记下这轮带了图');
+    assert.equal(m2.text, '带图回复');
+    fs.rmSync(markerFile, { force: true });
+    ok('④ --image 透传 + 标记记 image');
   }
 
   console.log(`\nALL PASSED (${pass})`);

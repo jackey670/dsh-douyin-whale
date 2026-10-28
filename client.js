@@ -392,7 +392,7 @@ window.__ModuleLoader__.load({
                 h('div', { 'data-dy2-grow': '' },
                   h('div', { 'data-dy2-kv': '' }, (it.title || it.text || '(无标题)').slice(0, 70)),
                   h('div', { 'data-dy2-sub': '' },
-                    `${it.kind === 'note' ? '图文' : it.kind === 'text' ? '文字' : '视频'}`
+                    `${it.kind === 'note' ? '图文' : it.kind === 'text' ? '文字' : it.kind === 'sticker' ? '表情' : '视频'}`
                     + `${it.item_id ? ` · ${it.item_id}` : ''} · 见于 ${fmtWhen(it.seen_at)}`)))))),
 
         /* ── 登录 ── */

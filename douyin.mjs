@@ -32,6 +32,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { markReplySent, readReplyMarker } from './lib/reply_marker.js';
+import { listPacks, pickMeme, searchMemes } from './lib/meme.js';
 
 import {
   baseUrl,
@@ -61,6 +62,10 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   profile <sec_uid|主页链接>                  用户主页
   watch <关键词> [--count N] [--n N]         选一条没看过的视频并抽帧
   send --to <昵称> --text <文字> [--send]     私信（默认 dry-run）
+       [--image <表情包路径>]                 附带本地图片（路径须在图库白名单里）
+  meme pick <情绪|关键词>                     从图库挑一张表情包（返回 path/caption）
+  meme list                                   列出可用图库
+  dm-image --url <CDN地址> [--out FILE]       下载私信里收到的表情/图片（给模型看）
   share --aweme <ID> --to <昵称> [--send]    把视频以原生分享卡片发给对方
   read-dm --from <昵称> [--limit N]          读私信（提取视频链接）
   help                                      显示本说明
@@ -73,6 +78,8 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   --out FILE       把本次 watch 结果写到指定 JSON 文件
   --to NICK        私信目标昵称（需完全一致）
   --text TEXT      私信内容（≤500 字）
+  --image PATH     私信附带图片（只允许图库白名单目录内的文件）
+  --url URL        dm-image 用：图片 CDN 地址（来自 read-dm 的 image_url）
   --aweme ID       视频 ID（share 用）
   --to-id SEC_UID  对方 sec_uid（share 时昵称重名才需要）
   --send           真发（需要 DOUYIN_IM_ALLOW_SEND=1 环境变量）
@@ -277,6 +284,7 @@ async function run() {
         DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
       };
       const args = [imScript, 'send', '--to', to, '--text', text];
+      if (options.image) args.push('--image', String(options.image));
       if (reallySend) args.push('--send');
 
       const result = spawnSync(py, args, { env, timeout: 180_000, encoding: 'utf8', windowsHide: true });
@@ -284,9 +292,60 @@ async function run() {
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
       ok(payload);
-      if (payload.ok && reallySend) markReplySent(undefined, text);
+      if (payload.ok && reallySend) markReplySent(undefined, text, { image: Boolean(options.image) });
       if (!payload.ok) process.exitCode = 1;
       return;
+    }
+    case 'meme': {
+      // meme pick <情绪|关键词> / meme list / meme search <词>
+      const sub = String(args[0] || 'pick').toLowerCase();
+      if (sub === 'list') {
+        const packs = listPacks();
+        if (!packs.length) return fail('没有可用图库（~/.dsh/meme-packs 下没有 index.db）');
+        return ok({ ok: true, packs });
+      }
+      if (sub === 'search') {
+        const q = args.slice(1).join(' ').trim();
+        if (!q) return fail('meme search 需要 <关键词>');
+        return ok({ ok: true, memes: searchMemes({ query: q, limit: 8 }) });
+      }
+      const q = args.slice(1).join(' ').trim();
+      if (!q) return fail('meme pick 需要 <情绪|关键词>，例如 meme pick 开心');
+      const m = pickMeme(q);
+      if (!m) return fail(`图库里没找到匹配「${q}」的表情`, { hint: 'meme list 看看有哪些 tag' });
+      return ok({
+        ok: true,
+        path: m.absPath,
+        tag: m.tag,
+        caption: m.caption,
+        pack: m.pack,
+        usage: `send --to "<昵称>" --text "<一句话>" --image "${m.absPath}" --send`,
+      });
+    }
+    case 'dm-image': {
+      // 下载私信里收到的表情/图片（给模型 Read 用）。out 默认落在 data/media/dm-images/
+      const url = String(options.url || '').trim();
+      if (!/^https:\/\/([a-z0-9-]+\.)*douyin(pic|static)?\.com\//i.test(url) && !/^https:\/\//i.test(url)) {
+        return fail('dm-image 需要 --url <https CDN 地址>');
+      }
+      const { createHash } = await import('node:crypto');
+      const dir = path.join(DATA_DIR, 'media', 'dm-images');
+      let out = String(options.out || '').trim();
+      if (out) {
+        const rp = path.resolve(out);
+        if (!rp.startsWith(path.resolve(dir))) return fail(`--out 必须在 ${dir} 里面`);
+        out = rp;
+      } else {
+        const ext = /\.png(\?|$)/i.test(url) ? '.png' : /\.gif(\?|$)/i.test(url) ? '.gif' : '.webp';
+        out = path.join(dir, `${createHash('sha1').update(url).digest('hex').slice(0, 16)}${ext}`);
+      }
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!res.ok) return fail(`下载失败 HTTP ${res.status}`, { url });
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (!buf.length) return fail('下载内容为空', { url });
+      fs.writeFileSync(out, buf);
+      return ok({ ok: true, path: out, bytes: buf.length });
     }
     case 'share': {
       const aweme = extractId(options.aweme) || '';
