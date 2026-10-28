@@ -1,6 +1,6 @@
 {
   "name": "dsh-douyin-whale",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "大肥鱼刷抖音 — Douyin toolkit for Dafeiyu: hot list, search, video frames, native share cards, guarded DM, local HTTP API, and a scheduler that watches the owner-sent videos and replies.",
   "type": "module",
   "main": "index.js",
@@ -75,15 +75,16 @@
     }
   },
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js && node --check lib/douyin_http_client.mjs && node --check lib/whale_state.js && node --check lib/panel_api.js && node --check lib/whale_tick.js && node --check lib/duty_agent.js && node --check lib/services.js && node --check douyin.mjs && node --check scheduler/scheduler.mjs && node --check scheduler/memory.mjs",
+    "check": "node --check index.js && node --check client.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js && node --check lib/douyin_http_client.mjs && node --check lib/whale_state.js && node --check lib/panel_api.js && node --check lib/whale_tick.js && node --check lib/duty_agent.js && node --check lib/services.js && node --check lib/persona.js && node --check lib/reply_marker.js && node --check douyin.mjs && node --check scheduler/scheduler.mjs && node --check scheduler/state.mjs && node --check scheduler/prompt.mjs && node --check scheduler/memory.mjs",
     "http": "python python/douyin_http.py",
     "douyin": "node douyin.mjs",
     "test:fixture": "node tools/run-py.mjs tests/test_fixture.py",
     "test:safety": "node tools/run-py.mjs -m pytest -q tests/test_safety.py",
     "test:readback": "node tools/run-py.mjs -m pytest -q tests/test_readback.py",
-    "test": "npm run test:py && node scheduler/memory.test.mjs && node lib/panel.test.mjs && node lib/panel_api.test.mjs && node lib/duty_agent.test.mjs && node lib/whale_tick.test.mjs",
+    "test": "npm run test:py && node scheduler/memory.test.mjs && node scheduler/state.test.mjs && node scheduler/send_gate.test.mjs && node lib/panel.test.mjs && node lib/panel_api.test.mjs && node lib/duty_agent.test.mjs && node lib/whale_tick.test.mjs",
     "test:memory": "node scheduler/memory.test.mjs",
-    "test:js": "node scheduler/memory.test.mjs",
+    "test:state": "node scheduler/state.test.mjs",
+    "test:js": "node scheduler/memory.test.mjs && node scheduler/state.test.mjs && node scheduler/send_gate.test.mjs",
     "test:panel": "node lib/panel.test.mjs",
     "test:api": "node lib/panel_api.test.mjs",
     "preview": "node tools/panel-preview/server.mjs",

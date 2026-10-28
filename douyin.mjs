@@ -31,6 +31,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+import { markReplySent, readReplyMarker } from './lib/reply_marker.js';
+
 import {
   baseUrl,
   downloadVideo,
@@ -255,9 +257,18 @@ async function run() {
       if (!text) return fail('send 需要 --text <文字>');
       const reallySend = options.send === true;
 
+      // 调度器模式：一轮只允许发一条。已经发过就直接拒绝，
+      // 避免 agent 顺着对话多回几条，把回复顺序和对象都搅乱。
+      const marker = reallySend ? readReplyMarker() : null;
+      if (marker?.sent) {
+        return fail('本轮已经发过一条私信（调度器限制：每条内容只回一次）', {
+          item_id: marker.item_id,
+        });
+      }
+
       const { spawnSync } = await import('node:child_process');
       const py = findImPython();
-      const imScript = path.join(ROOT, 'python', 'douyin_im.py');
+      const imScript = process.env.DOUYIN_IM_SCRIPT || path.join(ROOT, 'python', 'douyin_im.py');
       const env = {
         ...process.env,
         PYTHONUTF8: '1',
@@ -273,6 +284,7 @@ async function run() {
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
       ok(payload);
+      if (payload.ok && reallySend) markReplySent(undefined, text);
       if (!payload.ok) process.exitCode = 1;
       return;
     }
@@ -285,7 +297,7 @@ async function run() {
 
       const { spawnSync } = await import('node:child_process');
       const py = findImPython();
-      const imScript = path.join(ROOT, 'python', 'douyin_im.py');
+      const imScript = process.env.DOUYIN_IM_SCRIPT || path.join(ROOT, 'python', 'douyin_im.py');
       const env = {
         ...process.env,
         PYTHONUTF8: '1',
@@ -312,7 +324,7 @@ async function run() {
 
       const { spawnSync } = await import('node:child_process');
       const py = findImPython();
-      const imScript = path.join(ROOT, 'python', 'douyin_im.py');
+      const imScript = process.env.DOUYIN_IM_SCRIPT || path.join(ROOT, 'python', 'douyin_im.py');
       const env = {
         ...process.env,
         PYTHONUTF8: '1',

@@ -116,7 +116,7 @@ export function addFacts(home, nick, facts) {
  * 给模型看的上下文摘要：**只给最近几条 + 事实**。
  * 不要把 80 条全塞进提示词——那是白烧 token。
  */
-export function dmContext(home, nick, { recent = 12 } = {}) {
+export function dmContext(home, nick, { recent = 12, mine = 5 } = {}) {
   const m = loadDmMemory(home, nick)
   if (!m || !m.messages.length) return null
   return {
@@ -124,6 +124,8 @@ export function dmContext(home, nick, { recent = 12 } = {}) {
     rounds: m.rounds,
     facts: m.facts,
     recent: m.messages.slice(-recent),
+    // 最近自己说过的话：提示词里用来禁止重复开头/句式
+    mine: m.messages.filter(x => x.from === 'me' && x.text).slice(-mine).map(x => x.text),
     total_remembered: m.messages.length,
   }
 }
