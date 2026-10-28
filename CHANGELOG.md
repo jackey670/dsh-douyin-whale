@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.5.0 — 2026-10-29
+
+表情包收发 + 白框结案。
+
+### 新增
+
+- **发表情包**：`douyin.mjs send --image <路径>`（caption 必填）。链路：聊天页隐藏上传
+  input（`semi-upload-hidden-input`）→「发送给 ××」模态框（caption 是 `semi-input-textarea`，
+  发送按钮「发送 (N)」）→ 点发送。**必须等预览图从本地 blob 换成 douyinpic CDN 地址再点发送**，
+  否则消息永远卡「发送中」、对方收不到（2026-10-29 实测）。
+- **图库**：`lib/meme.js`（只读 dsh-meme 的 SQLite 索引）+ `douyin.mjs meme pick/list/search`。
+  图库自动发现 `~/.dsh/meme-packs/*`，`DOUYIN_MEME_ROOTS` 可加根目录；与
+  `douyin_im.py meme_roots()` 同一份白名单。
+- **收表情包**：私信解析新增 `kind=sticker`（aweType 501 收藏表情 / 2702 聊天图片，
+  带 `image_uri/image_url/image_id`），按 `image_id` 入队；回复前自动把图下载到
+  `data/media/dm-images/`（`douyin.mjs dm-image`），模型先 Read 看图再用
+  `meme pick` 挑同情绪的图回敬。
+- **拟人化节奏**：每轮按 `meme.probability`（默认 0.3）允许带图，`meme.maxPerDay`
+  （默认 6）防刷屏；面板配置页可调（`sanitizeConfigPatch` 放行 meme 节）。
+- 回读确认新增媒体维度：`count_my_media`（图片消息没有 text/itemId，
+  `count_my_matching` 数不到）；带图回复按 caption 文本核对。
+- `tools/whitebox-probe.mjs`（`npm run probe:whitebox`）：白框取证探针。
+- `tools/probe_composer.py`：聊天输入区 DOM 探针（近只读，只点面板开关）。
+
+### 修复
+
+| 现象 | 原因 |
+|---|---|
+| 图片发出后对方看不到、本地永远「发送中」 | 点发送太早：上传还没完成。现在等预览换 CDN 地址再点；回读时「发送中」未消失不算送达 |
+| 回读假阳性（主人自己新发的消息被当成回复送达的证据） | 旧逻辑在「无标记」时退回「任意新正文」判据；现在没有标记正文一律不算送达 |
+| 白框（结案） | `ZCODE_HOME` 不是 CLI 读取的变量，之前「隔离 home」从未生效；桌面窗口关闭状态下用与调度器完全同参的唤醒实测 **无新窗口**——白框来源是旧版 `--surface desktop` 行为与凭据过期登录弹窗，分别被 `--surface terminal` 和 `--no-browser` 修掉 |
+
+### 测试
+
+- 新增：`scheduler/meme.test.mjs`（图库 4 项）、`tests/test_meme_gate.py`
+  （白名单/扩展名/大小/fail-closed/媒体计数 6 项，抓到并修掉「无图库目录时白名单被跳过」）。
+- 扩展：state 10 项（sticker 入队、sticker 提示词、memeAllowed）、send_gate 4 项（--image 透传）。
+- 全量 `npm test`：Python 29 项 + JS 67 项。
+
+### 已知限制
+
+- caption 与图是两条消息（抖音行为）；一轮一条标记按「一次发送动作」计。
+- caption 短暂丢失（发送中断）会导致回读失败重试，不会重复发图。
+- DSH 0.2.2-alpha.2 已实测可启动；插件加载验证因本机 symlink 权限（`plugin add` 拒绝访问）
+  未完成，等升级主力宿主时一并验证。
+
 ## 1.4.2 — 2026-10-28
 
 修主人反馈的四类问题：白框、回复顺序/错配、纯文字消息不回、回复太机械。

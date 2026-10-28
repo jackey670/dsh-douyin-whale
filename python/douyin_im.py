@@ -1228,11 +1228,38 @@ CLICK_MODAL_BTN_JS = r"""
 """
 
 
-async def attach_image(page, image_path: str, wait_ms: int = 15_000) -> dict:
-    """把本地图片塞进聊天上传 input（set_input_files），等「发送给」模态框出现。
+# 上传完成信号：模态框里的预览图从本地 blob 换成了 douyinpic CDN 地址。
+# 2026-10-29 实测：不等上传完成就点「发送」，消息会永远卡在「发送中」，对方收不到。
+MODAL_READY_JS = r"""
+() => {
+  const modal = document.querySelector('[class*="MsgInputSendFileModal"]');
+  if (!modal) return { modal: false };
+  const imgs = [...modal.querySelectorAll('img')]
+    .map((im) => String(im.currentSrc || im.src || ''));
+  const uploaded = imgs.some((s) => /douyinpic\.com|bytetos|\/tos-/.test(s) && !s.startsWith('blob:'));
+  return { modal: true, imgs: imgs.length, uploaded };
+}
+"""
 
-    返回模态框信息（标题/发送按钮/caption 输入框）；found=False 说明上传
-    没起来（前端改版或文件被拒），调用方不要盲目点发送。
+# 最后一条「我发的」气泡附近还有没有「发送中」标记
+LAST_BUBBLE_SENDING_JS = r"""
+() => {
+  const bubbles = document.querySelectorAll('[class*="isFromMe"]');
+  const last = bubbles[bubbles.length - 1];
+  if (!last) return false;
+  let root = last;
+  for (let i = 0; i < 3 && root.parentElement; i++) root = root.parentElement;
+  return /发送中/.test(root.innerText || '');
+}
+"""
+
+
+async def attach_image(page, image_path: str, wait_ms: int = 15_000) -> dict:
+    """把本地图片塞进聊天上传 input（set_input_files），等「发送给」模态框出现，
+    再等预览图从本地 blob 换成 CDN 地址（上传真正完成）。
+
+    返回模态框信息；found=False 说明上传没起来（前端改版或文件被拒），
+    调用方不要盲目点发送。
     """
     sel = None
     for s in UPLOAD_INPUTS:
@@ -1258,6 +1285,23 @@ async def attach_image(page, image_path: str, wait_ms: int = 15_000) -> dict:
         if modal.get("found"):
             break
         await page.wait_for_timeout(500)
+    if not modal.get("found"):
+        return modal
+    # 等上传完成（预览图换成 CDN 地址）；检测不到就固定再等 3 秒兜底。
+    ready_deadline = time.monotonic() + 12
+    uploaded = False
+    while time.monotonic() < ready_deadline:
+        try:
+            ready = await page.evaluate(MODAL_READY_JS)
+        except Exception:
+            ready = {}
+        if ready.get("uploaded"):
+            uploaded = True
+            break
+        await page.wait_for_timeout(500)
+    if not uploaded:
+        await page.wait_for_timeout(3000)
+    modal["upload_ready"] = uploaded
     return modal
 
 
@@ -1298,11 +1342,16 @@ async def confirm_image_sent(page, caption: str, media_before: int | None,
         for f in FAILURE_MARKERS:
             if await page.locator(f).first.count():
                 raise IMError("SEND_FAILED", "页面出现「发送失败/重试」，图片未送达")
+        # 「发送中」还挂着 = 上传/投递没完成，条数+1 也只是本地回显，不算数
+        try:
+            still_sending = await page.evaluate(LAST_BUBBLE_SENDING_JS)
+        except Exception:
+            still_sending = False
         msgs = await read_messages(page)
         if msgs is not None:
             media_after = count_my_media(msgs)
             text_after = count_my_matching(msgs, caption) if caption else text_before
-            if media_before is None or media_after > media_before:
+            if (media_before is None or media_after > media_before) and not still_sending:
                 return {
                     "readback": True,
                     "media_before": media_before,
@@ -1867,6 +1916,9 @@ AWE_TYPE_CARD = 800
 # 2026-10-28 实测：parsedContent 有 emoji_type/sticker_type/url{uri,url_list,width,height}，
 # 没有 text/itemId —— 所以「无文字无 itemId」的消息要看这个值，不能当空消息丢掉。
 AWE_TYPE_STICKER = 501
+# 通过聊天上传 input 发出去的图片消息（2026-10-29 实测）：
+# 也是无 text/itemId，parsedContent 和 501 同构；caption 不随图走，是独立文本消息。
+AWE_TYPE_IMAGE = 2702
 
 # 聊天输入区的文件上传 input（2026-10-28 实测，semi-upload 组件）。
 # accept=".jpg,.jpeg,.png,.gif,.mp4"；-replace 是替换预览用的第二个 input。
@@ -2173,10 +2225,11 @@ async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dic
             item_id = m.get("item") or ""
             img_uri = m.get("img_uri") or ""
             img_url = m.get("img_url") or ""
-            # aweType: 800 = 视频卡片；501 = 收藏表情/贴纸；0 但带 itemId = 图文；700 = 普通文字
+            # aweType: 800 = 视频卡片；501 = 收藏表情/贴纸；2702 = 聊天发出的图片；
+            # 0 但带 itemId = 图文；700/703 = 普通文字
             if awe == AWE_TYPE_CARD:
                 kind = "video"
-            elif awe == AWE_TYPE_STICKER or (img_uri and not item_id):
+            elif awe in (AWE_TYPE_STICKER, AWE_TYPE_IMAGE) or (img_uri and not item_id):
                 kind = "sticker"
             elif item_id:
                 kind = "note"

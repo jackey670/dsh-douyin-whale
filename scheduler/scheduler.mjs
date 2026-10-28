@@ -231,6 +231,26 @@ function beginWakeMarker(item) { beginReplyMarker(DSH_HOME, item) }
 function readWakeMarker() { return readReplyMarker(DSH_HOME) }
 function endWakeMarker() { endReplyMarker(DSH_HOME) }
 
+/** 宽松 JSON 提取：优先整体 parse（douyin.mjs 是多行美化输出），不行再扫平衡块 */
+function parseJsonLoose(text) {
+  const s = String(text || '').trim();
+  if (!s) return {};
+  try { return JSON.parse(s); } catch { /* 不是整段 JSON 就继续扫 */ }
+  let depth = 0, start = -1;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (ch === '{') { if (depth === 0) start = i; depth += 1; }
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        try { return JSON.parse(s.slice(start, i + 1)); } catch { /* 继续找下一段 */ }
+        start = -1;
+      }
+    }
+  }
+  return {};
+}
+
 // ── tick ────────────────────────────────────────────────────────────────────
 let checking = false
 async function tick({ manual = false } = {}) {
@@ -254,14 +274,14 @@ async function tick({ manual = false } = {}) {
     if (!dm) return
 
     // 主人发来的内容 → 先并入本地队列（页面只渲染十来条，老卡片会被挤掉）。
-    // 视频/图文带 item_id；纯文字消息没有 item_id，也要进队列（kind=text）。
+    // 视频/图文带 item_id；纯文字（kind=text）和表情（kind=sticker）没有 item_id。
     const all = Array.isArray(dm.messages)
       ? dm.messages.filter(m => m && typeof m === 'object' && m.from !== 'me')
       : [];
     // 文字消息只取最近 5 条：第一次接入时别把历史聊天一口气全回一遍。
-    const textMsgs = all.filter(m => !m.item_id && String(m.text || '').trim());
+    const textMsgs = all.filter(m => !m.item_id && m.kind !== 'sticker' && String(m.text || '').trim());
     const keepTexts = new Set(textMsgs.slice(-5));
-    const items = all.filter(m => m.item_id || keepTexts.has(m));
+    const items = all.filter(m => m.item_id || m.kind === 'sticker' || keepTexts.has(m));
 
     const merged = updateState((cur) => ({ ...cur, queue: mergeQueue(cur.queue, items) }));
     const queued = merged.queue;
@@ -290,11 +310,10 @@ async function tick({ manual = false } = {}) {
       const dl = spawnSync(process.execPath, [
         path.join(ROOT, 'douyin.mjs'), 'dm-image', '--url', next.image_url,
       ], { encoding: 'utf8', timeout: 90_000, windowsHide: true });
-      try {
-        const j = JSON.parse((dl.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() || '{}');
-        if (j.ok) next.image_path = j.path;
-        else log(`[tick] 表情图下载失败：${j.error ?? 'unknown'}`);
-      } catch { log('[tick] 表情图下载输出不是 JSON'); }
+      const j = parseJsonLoose(dl.stdout);
+      if (j.ok) next.image_path = j.path;
+      else log(`[tick] 表情图下载失败：${j.error ?? dl.error?.message ?? 'unknown'}`
+        + `（stderr=${String(dl.stderr || '').slice(-120)}）`);
     }
     const meBefore = meTextSet(dm);
     const mem = dmContext(DSH_HOME, ownerNick);
@@ -329,9 +348,7 @@ async function tick({ manual = false } = {}) {
       const expected = normalizeText(marker?.text);
       // 有标记就以标记里的正文为准（能确认「这一条就是回这条内容的」）；
       // 没标记（agent 没发）才退回「任意新正文」。
-      const delivered = expected
-        ? fresh.some(t => t === expected || t.includes(expected) || expected.includes(t))
-        : fresh.length > 0;
+      const delivered = Boolean(expected) && fresh.some(t => t === expected || t.includes(expected) || expected.includes(t));
 
       if (delivered) {
         const newSt = readState();
@@ -502,9 +519,9 @@ if (has('--help') || has('-h')) {
   const all = Array.isArray(dm.messages)
     ? dm.messages.filter(m => m && typeof m === 'object' && m.from !== 'me')
     : []
-  const textMsgs = all.filter(m => !m.item_id && String(m.text || '').trim())
+  const textMsgs = all.filter(m => !m.item_id && m.kind !== 'sticker' && String(m.text || '').trim())
   const keepTexts = new Set(textMsgs.slice(-5))
-  const items = all.filter(m => m.item_id || keepTexts.has(m))
+  const items = all.filter(m => m.item_id || m.kind === 'sticker' || keepTexts.has(m))
   const queued = mergeQueue(st.queue ?? [], items)
   const pending = pendingOf(queued, st.repliedIds)
   console.log(JSON.stringify({

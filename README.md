@@ -154,6 +154,26 @@ flowchart TD
 | 每轮新会话 + 本地记忆 | 上下文底座从约 260k 降到约 30k；记忆只给最近 10 行和长期事实，不把整段历史塞进提示词 |
 | 发送闸 + 冷却 | 连续发送会触发风控，随后整段会话被服务端作废 |
 
+### 表情包（v1.5.0）
+
+大肥鱼会斗图了。图库来自 dsh-meme（`~/.dsh/meme-packs`，大肥鱼包 24 张，SQLite 索引带
+caption/关键词，六个情绪桶）：
+
+```bash
+node douyin.mjs meme pick "开心"                      # 挑一张，返回 path/caption
+node douyin.mjs send --to "<昵称>" --text "一句话" \
+  --image "<pick 给的 path>" --send                   # 图 + caption 一起发
+```
+
+- 收到主人发的收藏表情（aweType 501）或聊天图片（2702）会入队（`kind=sticker`），
+  处理前自动把图下载到 `data/media/dm-images/` 给模型看，再挑同情绪的图回敬。
+- 节奏：每轮按 `meme.probability`（默认 0.3）允许配图，`meme.maxPerDay`（默认 6）防刷屏，
+  面板设置页可调。
+- 安全边界：`--image` 只认图库白名单目录（`DOUYIN_MEME_ROOTS` / `~/.dsh/meme-packs`），
+  目录不存在时 fail-closed 拒发；扩展名/大小钳制；走同一套发送双闸和冷却。
+- 细节坑（实测）：**点「发送 (N)」前必须等预览图从本地 blob 换成 douyinpic CDN 地址**，
+  否则消息永远卡「发送中」、对方收不到；caption 不随图走，是独立文本消息。
+
 ### 命令
 
 ```bash

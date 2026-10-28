@@ -49,7 +49,7 @@ export function buildTaskPrompt({
       styleHint(),
       '',
       memoryBlock(mem, ownerNick),
-      '看完图，用 `meme pick` 从自己的图库里挑一张情绪对得上的，配一句话回敬：',
+      '看完图，**必须**用 `meme pick` 从自己的图库里挑一张情绪对得上的表情包回敬（--image 是硬性要求，不是可选项），再配一句话：',
       `   ${D} meme pick "<1-2个字的情绪，如 开心/无语/害羞>"`,
       `   ${D} send --to "${ownerNick}" --text "<一句话>" --image "<pick 返回的 path>" --send`,
       '⚠️ caption 必填；一轮一条；不要提「消息/收到/表情包」这类词。',
