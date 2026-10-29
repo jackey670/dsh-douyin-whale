@@ -8,7 +8,7 @@
  *     改配置和启停调度器。面板不提供绕过发送闸的发消息入口。
  *   · CSS 用宿主的设计令牌（--dsw-alias-*），深浅色自动跟随。
  *
- * ⭐ PANEL_BUILD：每次改完 client.js 就 +1，面板右上角 v1.5.0·b<N> 用来
+ * ⭐ PANEL_BUILD：每次改完 client.js 就 +1，面板右上角 v1.5.1·b<N> 用来
  *   排「浏览器还在用缓存」的障。版本号必须和 package.json 一致 ——
  *   tools/release-audit.mjs 会机械核对，别让它漂。
  * ============================================================================
@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 6;
+    const PANEL_BUILD = 7;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -140,6 +140,8 @@ window.__ModuleLoader__.load({
       const [enabled, setEnabled] = useState(true);
       const [winStart, setWinStart] = useState('00:00');
       const [winEnd, setWinEnd] = useState('24:00');
+      const [memePct, setMemePct] = useState(30);
+      const [memeMax, setMemeMax] = useState(6);
 
       const load = useCallback(async () => {
         setBusy('load');
@@ -156,6 +158,8 @@ window.__ModuleLoader__.load({
           const w = (s.watch?.windows ?? [])[0] ?? {};
           setWinStart(w.start ?? '00:00');
           setWinEnd(w.end ?? '24:00');
+          setMemePct(Math.round((s.meme?.probability ?? 0.3) * 100));
+          setMemeMax(s.meme?.maxPerDay ?? 6);
           setMsg('');
         } catch (e) {
           setMsg(String(e?.message ?? e));
@@ -211,6 +215,7 @@ window.__ModuleLoader__.load({
               dailyMax,
               windows: [{ start: winStart, end: winEnd }],
             },
+            meme: { probability: memePct / 100, maxPerDay: memeMax },
           });
           if (j.ok) setMsg('配置已保存（下个 tick 生效）');
           else setMsg(j.error || '保存失败');
@@ -219,7 +224,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy('');
         }
-      }, [nick, enabled, interval, dailyMax, winStart, winEnd]);
+      }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax]);
 
       const schedulerAct = useCallback(async (action) => {
         setBusy(action);
@@ -258,7 +263,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.5.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.5.1·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -266,7 +271,7 @@ window.__ModuleLoader__.load({
                   h('span', { 'data-dy2-v': '' }, data.owner || '（未配置）')),
                 h('div', { 'data-dy2-stat': '' },
                   h('span', { 'data-dy2-k': '' }, '今天'),
-                  h('span', { 'data-dy2-v': '' }, `已回复 ${data.today?.watches ?? 0} 条`)),
+                  h('span', { 'data-dy2-v': '' }, `已回复 ${data.today?.watches ?? 0} 条 · 表情 ${data.today?.memes ?? 0}`)),
                 h('div', { 'data-dy2-stat': '' },
                   h('span', { 'data-dy2-k': '' }, '队列'),
                   h('span', { 'data-dy2-v': '' }, `共 ${queue.total ?? 0} 条 · 待回复 ${queue.pending ?? 0}`)),
@@ -360,6 +365,24 @@ window.__ModuleLoader__.load({
                   onChange: (e) => setWinEnd(e.target.value),
                 })),
               h('div', { 'data-dy2-hint': '' }, 'HH:MM；只在此时段内检查，结束填 24:00 表示全天。')),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '表情包概率'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 0, max: 100,
+                  value: memePct, onChange: (e) => setMemePct(Number(e.target.value) || 0),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '%')),
+              h('div', { 'data-dy2-hint': '' }, '0–100；回复时允许带图的比例，0 = 不配图。')),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '表情每日上限'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 0, max: 30,
+                  value: memeMax, onChange: (e) => setMemeMax(Number(e.target.value) || 0),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '张 / 天')),
+              h('div', { 'data-dy2-hint': '' }, '0–30；防刷屏，收表情包回敬不受此限。')),
             h('div', { 'data-dy2-field': '', 'data-wide': '' },
               h('label', { 'data-dy2-switch': '' },
                 h('input', {

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.1 — 2026-10-30
+
+面板表情包配置 + GitHub 发布补齐。
+
+### 新增
+
+- 设置页面板新增「表情包概率（%）」「表情每日上限」两个配置项（对应 `meme.probability` /
+  `meme.maxPerDay`，后端钳制已有、这次补 UI）；状态卡「今天」附带当天表情数。
+- `summary()` 输出 `meme` 配置节与 `today.memes` 计数。
+
+### 运维记录
+
+- **GitHub 发布补齐**：main 同步至 `503d615`，补 tag `v1.4.2`/`v1.5.0` 与对应 Release
+  （gh CLI，走 clash 7897 代理）。
+- **DSH 宿主**：0.2.2-alpha.2 从 npx 缓存直启验证——插件 API 路由全通，但第三方插件
+  client 面板 404（`dsh-client-runtime` 已被 0.2.2 移除，换新 inject 清单仍 404，
+  疑似要走插件管理器安装路径）；主力宿主暂留 0.1.5-rc.1，0.2.2 用
+  `~/.dsh/start-dsh.cmd 022` 备用。详见 `docs/UPSTREAM-NOTES.md`。
+
 ## 1.5.0 — 2026-10-29
 
 表情包收发 + 白框结案。

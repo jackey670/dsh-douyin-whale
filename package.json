@@ -1,6 +1,6 @@
 {
   "name": "dsh-douyin-whale",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "大肥鱼刷抖音 — Douyin toolkit for Dafeiyu: hot list, search, video frames, native share cards, guarded DM (text + sticker images), local HTTP API, and a scheduler that watches owner-sent content and replies.",
   "type": "module",
   "main": "index.js",
@@ -68,7 +68,7 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-modules",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-settings-plugins"
       ]

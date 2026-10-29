@@ -39,4 +39,21 @@
 - 2026-10 密集发版：v0.2.1-rc.x → **v0.2.2-alpha.2（10-28）**。
 - 对本插件相关的新能力：**第三方插件包更新 + 热更新失败自动回滚**——发布时版本号必须
   单调递增、`files` 必须完整（发版审计已在管）；无 agents API 破坏性变更，代码不用改。
+
+### 宿主升级实操记录（2026-10-30）
+
+- **0.2.2-alpha.2 已在 npx 缓存**（`bd325e168b7188a4`），从缓存直启即可，profiles 链接农场
+  一动不动 = 天然回滚（0.1.5-rc.1 在 `1e7f6d9597241db0`）。
+- 直启验证结果：web 起得来、**插件 API 路由全通**（`/api/douyin-whale/status` 出真实数据、
+  `/duty/selftest`、`POST /config` 带 meme 节都正常）、web profile 里的
+  `.dsh-module-fallback` 被 0.2.x 自举自动清除（预期）。
+- **未通过**：第三方插件的 client 面板模块 404（`/plugins/??dsh-douyin-whale/client.js`
+  两种参数形状都 404），内置模块（`??@deepseek-ai/dsh-client-modules/client.js`）正常。
+  插件 manifest 的 inject 引用的 `dsh-client-runtime` 在 0.2.2 已不存在（换成
+  `dsh-client-modules` 等），改成新清单后仍 404——0.2.2 的第三方 client 下发可能要走
+  插件管理器的安装/构建路径，而 `dsh plugin add` 在本机因 symlink 权限（拒绝访问）失败。
+- **决定**：主力宿主暂留 0.1.5-rc.1（面板完整可用），0.2.2 用
+  `~/.dsh/start-dsh.cmd 022` 备用直启；等上游明确第三方 client 机制后再切。
+- 备份：`~/.dsh/backup-20261030/`（profiles-web 真实文件、farm 链接清单、
+  sessions/storages、根部插件数据；388KB）。
 - 本地主力宿主还在 0.1.5-rc.1；升级前先备份 `~/.dsh`（另见 BACKLOG）。
