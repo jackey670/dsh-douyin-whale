@@ -20,6 +20,10 @@
   疑似要走插件管理器安装路径，本机 symlink 权限挡住 `dsh plugin add`）。
   **决定：主力宿主暂留 0.1.5-rc.1**（面板完整可用），0.2.2 用
   `~/.dsh/start-dsh.cmd 022` 备用直启；备份在 `~/.dsh/backup-20261030/`（388KB）。
+- **10-30 更正**：上面的「面板 404」是**误诊**——0.2.2 对无 rev 的手工猜测 URL 按设计回
+  404（rev 只随 boot graph 下发）。取首页 boot graph 里的真实 combo URL 实测：本插件
+  client bundle 200 下发，设置弹窗出现「大肥鱼刷抖音」页签，面板完整渲染、API 数据全通。
+  详见 `docs/UPSTREAM-NOTES.md`。
 - 调度器已恢复常驻（重启机器后第一件事）。
 
 ## 验证

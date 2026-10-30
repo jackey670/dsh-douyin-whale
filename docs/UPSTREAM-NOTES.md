@@ -47,13 +47,19 @@
 - 直启验证结果：web 起得来、**插件 API 路由全通**（`/api/douyin-whale/status` 出真实数据、
   `/duty/selftest`、`POST /config` 带 meme 节都正常）、web profile 里的
   `.dsh-module-fallback` 被 0.2.x 自举自动清除（预期）。
-- **未通过**：第三方插件的 client 面板模块 404（`/plugins/??dsh-douyin-whale/client.js`
-  两种参数形状都 404），内置模块（`??@deepseek-ai/dsh-client-modules/client.js`）正常。
-  插件 manifest 的 inject 引用的 `dsh-client-runtime` 在 0.2.2 已不存在（换成
-  `dsh-client-modules` 等），改成新清单后仍 404——0.2.2 的第三方 client 下发可能要走
-  插件管理器的安装/构建路径，而 `dsh plugin add` 在本机因 symlink 权限（拒绝访问）失败。
-- **决定**：主力宿主暂留 0.1.5-rc.1（面板完整可用），0.2.2 用
-  `~/.dsh/start-dsh.cmd 022` 备用直启；等上游明确第三方 client 机制后再切。
+- **client 面板「404」是误诊（10-30 更正）**：0.2.2 的 `/plugins` 路由按设计对
+  「未知资源或 rev」回 404——combo URL 里的 `rev=` 是宿主按 bundle 的 mtime/ctime/size
+  算的，只随 boot graph 下发，**手工猜的无 rev URL 必然 404，不能当验证手段**。
+  正确验证：取宿主首页 HTML 的 boot graph 行，里面有真实 combo URL
+  （`plugins/??…,dsh-douyin-whale/client.js,…&rev=a5ac0cddfb8d`），带 cookie 请求 200，
+  内容就是本插件 `client.js`；设置弹窗出现「🐳 大肥鱼刷抖音」页签，面板完整渲染、
+  `/api/douyin-whale/*` 实时数据全通（插件管理器显示 已安装·启用·运行中）。
+  机制（`dsh-client-modules` README）：client 插件 = `package.json` 里
+  `dsh.client{platform:'web',inject/external}` + `exports["./client"]` 已构建 bundle，
+  宿主扫描启用条目自动组图下发——本插件的声明两代宿主通用，无需改动。
+  （此前的「`dsh-client-runtime` 被 0.2.2 移除」说法也不成立：0.1.5 缓存里同样没有这个包。）
+- **决定（维持）**：主力宿主暂留 0.1.5-rc.1（稳定优先，0.2.2 是 alpha）；
+  0.2.2 用 `~/.dsh/start-dsh.cmd 022` 直启即用，面板/工具/API 全可用，**切版本无阻塞**。
 - 备份：`~/.dsh/backup-20261030/`（profiles-web 真实文件、farm 链接清单、
   sessions/storages、根部插件数据；388KB）。
 - 本地主力宿主还在 0.1.5-rc.1；升级前先备份 `~/.dsh`（另见 BACKLOG）。
