@@ -1242,14 +1242,17 @@ MODAL_READY_JS = r"""
 """
 
 # 最后一条「我发的」气泡附近还有没有「发送中」标记
-LAST_BUBBLE_SENDING_JS = r"""
+RECENT_BUBBLES_SENDING_JS = r"""
 () => {
+  // 查最近几条「我发的」气泡——caption 是独立消息排在图后面，只看最后一条
+  // 会漏掉还挂着「发送中」的图片（2026-10-31 实测被骗过一次）。
   const bubbles = document.querySelectorAll('[class*="isFromMe"]');
-  const last = bubbles[bubbles.length - 1];
-  if (!last) return false;
-  let root = last;
-  for (let i = 0; i < 3 && root.parentElement; i++) root = root.parentElement;
-  return /发送中/.test(root.innerText || '');
+  const tail = Array.from(bubbles).slice(-4);
+  return tail.some((b) => {
+    let root = b;
+    for (let i = 0; i < 3 && root.parentElement; i++) root = root.parentElement;
+    return /发送中|发送失败/.test(root.innerText || '');
+  });
 }
 """
 
@@ -1344,7 +1347,7 @@ async def confirm_image_sent(page, caption: str, media_before: int | None,
                 raise IMError("SEND_FAILED", "页面出现「发送失败/重试」，图片未送达")
         # 「发送中」还挂着 = 上传/投递没完成，条数+1 也只是本地回显，不算数
         try:
-            still_sending = await page.evaluate(LAST_BUBBLE_SENDING_JS)
+            still_sending = await page.evaluate(RECENT_BUBBLES_SENDING_JS)
         except Exception:
             still_sending = False
         msgs = await read_messages(page)

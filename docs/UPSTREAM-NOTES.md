@@ -63,3 +63,30 @@
 - 备份：`~/.dsh/backup-20261030/`（profiles-web 真实文件、farm 链接清单、
   sessions/storages、根部插件数据；388KB）。
 - 本地主力宿主还在 0.1.5-rc.1；升级前先备份 `~/.dsh`（另见 BACKLOG）。
+
+## 自定义模型网关（2026-10-31，值班大脑用）
+
+DSH 的 LLM 层只有 deepseek（Anthropic 格式，走 `api.deepseek.com`）与 pi-ai 两个
+adapter。**`@deepseek-ai/dsh-llm-pi-ai` 就是官方的自定义网关入口**：不需要写代码，
+用户设置（`~/.dsh/settings.yaml`）里加 `llm-pi-ai.providers.<名字>` 即可挂
+OpenAI 兼容端点；「api + baseURL + models 三件套 + apiKeyEnv」缺一不可
+（catalog 外的路由必须显式声明模型清单）。key 走 `apiKeyEnv` 引用的启动环境变量，
+不进配置文件。hand-declared 路由名必须是小写连字符格式，否则登录接口拒存
+（`UNSTABLE_PROVIDER_ID`）——但 `apiKeyEnv` 路线不涉及登录，不受影响。
+
+值班大脑的模型选择链：`dsh-agent-default-model`（base bundle 里
+`provider: deepseek-official`）→ 插件用 `agentDefaultModel.currentSelection()`
+读出来传给 `agents.create/resume` 的 `agentOptions`。本插件 v1.6.0 起支持
+`duty.provider`/`duty.model` 覆盖（modelSelection 优先于宿主默认），配合
+pi-ai 网关即可在没有官方 key 的机器上跑值班大脑（本机：wb2api = localhost:7863）。
+
+## 值班 agent 的工具面（2026-10-31 实测）
+
+宿主后台自治会话（`agents.create` 的子会话）**不给 shell/文件类工具**（审批类
+工具不下发），只有 `working_directory` + 插件注册的 douyin_* 工具。推论：
+- 任务消息不能假设 `Read`/Bash 存在（v1.5.x 的任务模板按 ZCode CLI 工具集写的，
+  在宿主里跑不通）；
+- 私信发送、图库挑选必须做成**插件工具**（v1.6.0 的 `douyin_dm_send`/
+  `douyin_meme_pick`），闸门内建在工具里；
+- 工具结果 `ContentBlock` 理论上有 `image` 块，但要走 attachment service
+  （`ImageBlock.attachment`），第三方插件接入面未文档化——值班模型暂时看不到图片。

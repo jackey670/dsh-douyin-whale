@@ -141,6 +141,11 @@ export function apply(ctx, config = {}) {
             log: dutyLog,
             sessionId: 'douyin-whale-duty-v1',
             cwd: resolved.dataDir || join(ROOT, 'data'),
+            // 值班会话模型路由：配置了 duty.provider/duty.model 就用它们
+            // （pi-ai 自定义网关），否则跟随宿主默认。
+            modelSelection: (resolved.dutyProvider && resolved.dutyModel)
+              ? { provider: resolved.dutyProvider, model: resolved.dutyModel }
+              : null,
             // 人设已内置在 lib/duty_agent.js 的 DEFAULT_SYSTEM_PROMPT 里；
             // 需要个性化时读 ~/.dsh 配置再拼 personaText 即可。
           });

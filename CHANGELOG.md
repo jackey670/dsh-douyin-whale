@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.6.0 — 2026-10-31
+
+值班大脑真机闭环：宿主内模型路由 + 发送/挑图工具 + 三个真 bug 修复。
+
+### 新增
+
+- **值班工具两枚**（工具数 11→13）：
+  `douyin_dm_send`——带三道闸的私信发送（dry-run 默认、宿主 env `DOUYIN_IM_ALLOW_SEND`
+  总闸、30s 发送闸+冷却、image 只认图库白名单），图+caption 与 `douyin.mjs send` 同链路；
+  `douyin_meme_pick`——本地图库挑表情（直读 SQLite，无浏览器、无配额）。
+- **值班模型路由**：值班会话可用 `duty.provider`/`duty.model` 指定模型路由
+  （`lib/duty_agent.js` 的 `modelSelection`），配合宿主 `dsh-llm-pi-ai` 的自定义网关声明
+  （如本机 wb2api，key 走启动环境 `apiKeyEnv`，不进配置文件）；留空跟随宿主默认。
+  没有官方 DeepSeek key 也能跑值班大脑。
+- **任务消息工具化**：值班 agent 在宿主里拿不到 shell/Read（后台会话不给审批类工具），
+  `buildTaskMessage` 从「`node douyin.mjs …` shell 指令」改为工具调用指令；
+  视频按 `douyin_video` 文案回复（值班环境抽不了帧、写不了日记——明说跳过，不装看过画面）。
+- 值班人设同步：发私信走 `douyin_dm_send`、表情包走 `douyin_meme_pick`。
+
+### 修复
+
+| 现象 | 原因 |
+|---|---|
+| 值班发的私信 CLI 回报成功、tick 回读永远 no-send | `childEnv()` 的 `USERPROFILE/HOME` 隔离把 CLI 的 `os.homedir()` 拐到 `data/home`，`reply_marker` 的标记读写跟着偏到 `data/home/.dsh`——CLI 读不到 tick 写的 begin 标记、写回的 sent:true tick 也看不见。childEnv 现在显式传 `DSH_HOME`（whale 状态目录），CLI 与 tick 对齐 |
+| 图片发送回报 ok、对方却收不到（卡「发送中」） | 发送确认只查**最后一条**气泡——caption 是独立消息排在图后面，图上的「发送中」根本没被看到。改为查最近 4 条我方气泡（`RECENT_BUBBLES_SENDING_JS`，含「发送失败」） |
+| 队列空转时值班日志一片安静，看起来像死了 | `!pending.length` 原本只在手动 tick 打日志；现在每轮一行（覆盖「主人重发同一张收藏表情被 image_id 去重」的场景） |
+| 回读失败无法定位是没发还是没读到 | 失败日志补判据摘要：marker 状态（sent/字数/null）、expected 正文、fresh 条数与样例 |
+
+### 运维记录（2026-10-31）
+
+- **DSH 0.2.2「第三方 client 面板 404」定论为误诊**：`/plugins` 路由对无 rev 的猜测 URL
+  按设计 404（rev 只随 boot graph 下发）。真 UI 实测：boot graph 有本插件行、
+  设置弹窗出现「大肥鱼刷抖音」页签、面板完整渲染、API 全通。详见
+  `docs/UPSTREAM-NOTES.md` 与 `RELEASE-1.5.1.md` 的更正。
+- **值班大脑 0.2.2 真机全链路闭环**：读主人 sticker → `douyin_meme_pick` →
+  `douyin_dm_send`（带图+caption，`send:true`）→ 回读确认（回复 19 字）→ 标记已回复。
+  模型路由 = 本机 wb2api（settings.yaml `llm-pi-ai.providers` 声明 +
+  启动环境 `WB2API_API_KEY`）。
+- 已知限制（值班环境）：宿主 tool 结果暂不能携带图片 → 值班模型看不到主人发的图
+  （按附言/上下文挑情绪）；抽帧、写日记做不了（无文件工具）。独立调度器（ZCode 版）
+  仍是全功能路径。
+
+### 测试
+
+- 全量 `npm test`：Python 29 项 + JS 68 项。
+
 ## 1.5.1 — 2026-10-30
 
 面板表情包配置 + GitHub 发布补齐。

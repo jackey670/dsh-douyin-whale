@@ -206,6 +206,38 @@ node scheduler/scheduler.mjs --watch-now
 `douyin-whale-duty-v1`）：装载后 15 秒跑第一轮，之后按配置间隔轮询。
 模型和上下文由宿主管，插件只负责投任务、收结果、回读确认。
 
+**模型路由**：值班会话默认跟随宿主的 agent 默认模型（`dsh-agent-default-model`）；
+没有官方 DeepSeek key 时，可在插件配置里写 `duty.provider`/`duty.model` 指向
+宿主 `dsh-llm-pi-ai` 声明的自定义网关（OpenAI 兼容，如本机 wb2api），key 走
+启动环境（`apiKeyEnv` 引用的变量，不进配置文件）：
+
+```yaml
+# 插件配置（cordis.patch.yml 的 douyin-whale 行）
+duty:
+  provider: wb2api
+  model: cn:deepseek-v4.1-flash
+```
+
+```yaml
+# 宿主用户设置（~/.dsh/settings.yaml）
+llm-pi-ai:
+  providers:
+    wb2api:
+      displayName: wb2api
+      apiKeyEnv: WB2API_API_KEY
+      api: openai-completions
+      baseURL: http://127.0.0.1:7863/v1
+      models:
+        - id: cn:deepseek-v4.1-flash
+          contextWindow: 1000000
+```
+
+值班环境的已知限制：宿主后台会话没有 shell/文件工具（审批类工具不下发），
+所以值班模式**发私信用 `douyin_dm_send` 工具、挑表情用 `douyin_meme_pick`**，
+视频按 `douyin_video` 文案回复（不抽帧）、不写日记；宿主工具结果暂不能带图，
+值班模型看不到主人发的图（按附言/上下文挑情绪）。全功能路径仍是独立调度器
+（ZCode 版）。
+
 生命周期照抄 dsh-douyin-scroll 值班鱼的三步链：`agents.get(sid)` 找 live →
 `resume({resumeSessionId})` 跨重启恢复 → `create({sessionId, meta, setup})`
 兜底；create 撞「已存在」回头再 get。人设通过 `setup` 的
@@ -645,7 +677,7 @@ dsh-douyin-whale/
 ├── douyin.mjs                   # 独立命令行（自动拉起本地 HTTP API）
 ├── lib/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
-│   ├── tools.js                 # 11 个工具定义
+│   ├── tools.js                 # 13 个工具定义
 │   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
 │   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）+ 原子写
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现
