@@ -1126,6 +1126,11 @@ async def confirm_sent(page, text: str, before_count: int | None = None,
                 continue
 
         # 条件 2：回读「我发的、内容匹配」的条数
+        # 「发送中」还挂着 = 本地回显，不算送达（与图片确认同一语义）
+        try:
+            still_sending = await page.evaluate(RECENT_BUBBLES_SENDING_JS)
+        except Exception:
+            still_sending = False
         msgs = await read_messages(page)
         if msgs is None:
             # fiber 读不到 → 退化到旧的气泡判据
@@ -1155,10 +1160,13 @@ async def confirm_sent(page, text: str, before_count: int | None = None,
             after_count = count_my_matching(msgs, text)
             readback = after_count >= 1
 
-        if composer_empty and readback:
+        # 有基线计数时以 count+1 + 无「发送中」为准（2026-10-31 实测：抖音偶发
+        # 发送成功但输入框没清空，旧门会误判未确认 → 烧尝试次数 + 重复回复）；
+        # composer 只在无基线的兜底路径里继续当判据。
+        if readback and not still_sending and (composer_empty or before_count is not None):
             return {
                 "bubble_found": True,
-                "composer_cleared": True,
+                "composer_cleared": composer_empty,
                 "readback": readback,
                 "my_msg_before": before_count,
                 "my_msg_after": after_count,
@@ -1170,7 +1178,7 @@ async def confirm_sent(page, text: str, before_count: int | None = None,
 
     raise IMError(
         "SEND_UNCONFIRMED",
-        f"已触发发送但未确认（输入框{'已清' if composer_empty else '未清'}，"
+        f"已触发发送但未确认（{'发送中' if still_sending else '输入框' + ('已清' if composer_empty else '未清')}，"
         f"回读{'通过' if readback else '未通过'}"
         + (f"，我发的匹配条数 {before_count}→{after_count}" if before_count is not None else "")
         + (f"，错误 {last_error}" if last_error else "")
