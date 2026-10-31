@@ -41,3 +41,8 @@ Thumbs.db
 # ── 面板预览（本地验证用）─────────────────────────────────────────
 tools/panel-preview/vendor/
 data/panel-preview-home/
+
+# 对话记忆/私人数据（~/.dsh/memory 同类物）永不入库
+memory/
+dm-*.json
+whale-chat-session.json
