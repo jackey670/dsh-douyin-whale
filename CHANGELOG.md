@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.7.0 — 2026-10-31
+
+值班大脑会「刷视频」了：队列空闲时低频挑一条主人可能感兴趣的视频，以原生卡片分享。
+
+### 新增
+
+- **主动分享轮**：`proactiveShare` 配置（`enabled`/`probability` 默认 0.08/轮、
+  `maxPerDay` 默认 3）——队列空闲时按概率投「刷热榜/搜索 → 挑一条主人偏好内的视频 →
+  分享」任务；卡片无文案（caption 会撞 30s 发送闸，后续再说）。手动 tick 不触发。
+  每日计数 `shares` 跨天清零，面板 status 的 today 附带。
+- **`douyin_dm_share` 工具**（工具数 14→15）：原生分享卡片，python 侧自带发送闸与
+  回读（aweType 800 + 同 item_id）；`douyin.mjs share` 接入「一轮一条」标记
+  （`markReplySent` 新增 `video` 字段）。
+- **`douyin_sticker_look` 工具**：把本地图（dm-images 下载件/图库成员）经宿主
+  `attachments` 服务带进值班对话——**值班模型第一次能看到主人发的表情**。
+  路径白名单 = dataDir + 图库根；魔数嗅探真实格式（抖音 CDN 下载件扩展名常名不符实）；
+  宿主 pi-ai 路由的模型条目必须声明 `input: [text, image]`，否则工具结果里的图
+  会被投影层静默丢弃（`~/.dsh/settings.yaml`，注意 0.2.2 启动会导入并改名
+  `.imported`）。
+- `panel_api` sanitize 放行 `proactiveShare` 节（probability 钳 [0,1]、
+  maxPerDay 钳 [0,20]）。
+
+### 真机验证（0.2.2 值班大脑 + wb2api）
+
+- 看图链路：sticker_look 74ms 入库 → 模型引用图片内容（修复扩展名谎报后）。
+- 主动分享链路：douyin_hot 1.8s + douyin_search 2.2s 浏览 → dm_share 33s 卡片送达
+  → 回读确认 aweme 7669768453024937125 → 计数 1。
+
+### 测试
+
+- 新增：whale_tick ⑨（主动分享轮：概率命中→卡片回读→计数；手动不触发）、
+  panel_api proactiveShare 钳制。全量 `npm test`：Python 29 + JS 70 项。
+
 ## 1.6.1 — 2026-10-31
 
 文字发送确认与图片确认对齐（修「输入框未清」误判）。

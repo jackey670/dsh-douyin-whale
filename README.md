@@ -677,7 +677,7 @@ dsh-douyin-whale/
 ├── douyin.mjs                   # 独立命令行（自动拉起本地 HTTP API）
 ├── lib/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
-│   ├── tools.js                 # 13 个工具定义
+│   ├── tools.js                 # 15 个工具定义
 │   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
 │   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）+ 原子写
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现

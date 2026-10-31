@@ -53,7 +53,10 @@ export function apply(ctx, config = {}) {
 
   ctx.effect(() => {
     const backend = new Backend(resolved);
-    const tools = createTools(backend).filter((tool) => {
+    // attachments 服务：宿主就绪后填充（douyin_sticker_look 把图带进模型对话用）。
+    // 工具执行时才读，不必在注册时就绪。
+    let attachmentService = null;
+    const tools = createTools(backend, { attachments: () => attachmentService }).filter((tool) => {
       const key = TOOL_SWITCH[tool.name];
       return key ? resolved.toolEnabled[key] !== false : true;
     });
@@ -117,6 +120,17 @@ export function apply(ctx, config = {}) {
           message: String(e?.message ?? e),
         });
       }
+    });
+
+    // ── attachments 服务（值班看图：douyin_sticker_look 把本地图带进模型对话）──
+    // 和 webServer/agents 一样用 inject 等就绪；宿主没有这个能力时保持 null，
+    // douyin_sticker_look 会如实报告「看不了图」，其余工具不受影响。
+    const attFiber = ctx.inject(['attachments'], (attCtx) => {
+      attachmentService = attCtx.attachments || null;
+      backend.log({
+        tool: 'plugin', ok: true, event: 'attachments_ready',
+        enabled: Boolean(attachmentService),
+      });
     });
 
     // ── 值班 tick（发布版的大脑；需要宿主 agents 能力）──
@@ -194,7 +208,7 @@ export function apply(ctx, config = {}) {
     }
 
     return () => {
-      for (const fiber of [dutyFiber, panelFiber]) {
+      for (const fiber of [dutyFiber, panelFiber, attFiber]) {
         try { fiber?.dispose?.(); } catch { /* unloading must not throw */ }
       }
       for (const dispose of disposers.reverse()) {

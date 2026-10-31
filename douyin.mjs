@@ -354,6 +354,14 @@ async function run() {
       if (!to) return fail('share 需要 --to <昵称>');
       const reallySend = options.send === true;
 
+      // 调度器/值班模式：一轮只发一条。视频分享和文字/表情共用同一个标记。
+      const marker = reallySend ? readReplyMarker() : null;
+      if (marker?.sent) {
+        return fail('本轮已经发过一条私信（调度器限制：每条内容只回一次）', {
+          item_id: marker.item_id,
+        });
+      }
+
       const { spawnSync } = await import('node:child_process');
       const py = findImPython();
       const imScript = process.env.DOUYIN_IM_SCRIPT || path.join(ROOT, 'python', 'douyin_im.py');
@@ -373,6 +381,9 @@ async function run() {
       try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
       ok(payload);
+      if (payload.ok && reallySend && payload.data?.sent) {
+        markReplySent(undefined, options.text ? String(options.text) : `视频分享 ${aweme}`, { video: aweme });
+      }
       if (!payload.ok) process.exitCode = 1;
       return;
     }
