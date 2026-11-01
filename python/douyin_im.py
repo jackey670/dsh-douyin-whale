@@ -642,6 +642,11 @@ async def new_context(pw, cookie_file: str | None):
             pass
 
     os.makedirs(PROFILE_DIR, exist_ok=True)
+    # 无头自动化时把窗口位置扔到屏幕外：headless 下此参数无副作用，但 Edge
+    # 自动更新后 --headless=new 偶尔会漏出真窗口（2026-10-31/11-01 主人两次
+    # 目击「大白框几秒消失」，时间与 tick 严丝合缝）——漏了也只在屏幕外闪。
+    # 有头流程（扫码/滑块验证）必须可见，不加。
+    headless_extra = ["--window-position=-32000,-32000"] if resolve_headless() else []
     ctx = await pw.chromium.launch_persistent_context(
         PROFILE_DIR,
         headless=resolve_headless(),
@@ -649,6 +654,7 @@ async def new_context(pw, cookie_file: str | None):
         args=[
             "--no-sandbox",
             "--disable-dev-shm-usage",
+            *headless_extra,
             # 不要加 --disable-gpu：那会让 headless 完全没有 WebGL，和扫码登录
             # 时那个有头浏览器的指纹对不上，抖音会把这当成「换了设备」把会话踢掉。
         ],
