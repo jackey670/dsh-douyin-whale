@@ -90,3 +90,20 @@ pi-ai 网关即可在没有官方 key 的机器上跑值班大脑（本机：wb2
   `douyin_meme_pick`），闸门内建在工具里；
 - 工具结果 `ContentBlock` 理论上有 `image` 块，但要走 attachment service
   （`ImageBlock.attachment`），第三方插件接入面未文档化——值班模型暂时看不到图片。
+
+## 0.2.1-rc.5 验证（2026-11-01，stable 线推进）
+
+npm 上 10-29 发布 0.2.1-rc.5（stable 线；alpha 线仍是 0.2.2-alpha.2）。从 npx 缓存
+直启 profile web 全链路验证，**插件零改动适配**：
+
+| 检查项 | 结果 |
+|---|---|
+| 工具注册 | 15 个全量（含 v1.7.0 的 dm_share/sticker_look） |
+| `/api/douyin-whale/*` | 200，含 proactiveShare 配置节 |
+| 面板 client 下发 | boot graph 有 whale 行，combo 200 内容为 v1.7.1 面板 |
+| attachments 服务（看图依赖） | `attachments_ready enabled:true` |
+| 值班大脑 | timer 启动 + duty selftest 会话就绪 |
+| 首轮 tick | 正常读私信 |
+
+宿主选择：rc.5（stable）与 0.2.2-alpha.2（alpha）都可用，`~/.dsh/start-dsh.cmd`
+带 `rc5`/`022` 参数切换；pi-ai 路由的 `input: [text, image]` 模态声明两边都要。
