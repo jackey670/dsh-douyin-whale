@@ -80,3 +80,46 @@ def test_count_my_media():
     # 我发的媒体 = 2 张无文字 + 1 张带 caption 的图
     assert D.count_my_media(msgs) == 3
     assert D.count_my_media(None) is None
+
+
+# ── 抖音原生表情（2026-11-03 实测定版）────────────────────────────────────
+
+EMOJI_SRC = ("https://p26-sign.douyinpic.com/obj/im-resource/"
+             "1687263141266-ts-e6999ae4b88ae5a5bd2de697a9e782b9e79da12e706e67"
+             "?lk3s=91c5b7cb&x-expires=1825250400")
+
+
+def test_emoji_name_and_token_from_src():
+    # 文件名 hex 段是 UTF-8 中文：晚上好-早点睡.png
+    assert D._emoji_name_from_src(EMOJI_SRC) == "晚上好-早点睡.png"
+    assert D._emoji_token(EMOJI_SRC) == "e6999ae4b88ae5a5bd2de697a9e782b9e79da12e706e67"
+    assert D._emoji_name_from_src("") == ""
+    assert D._emoji_token("not-a-url") == ""
+
+
+def test_emoji_pick_prefers_label_and_lists_available():
+    items = [{"index": 1, "label": "续火花", "src": ""},
+             {"index": 2, "label": "比心", "src": ""}]
+    assert D._emoji_pick(items, "比心", None)["index"] == 2
+    assert D._emoji_pick(items, "", 1)["label"] == "续火花"
+    with pytest.raises(D.IMError) as e:
+        D._emoji_pick(items, "不存在", None)
+    assert e.value.code == "EMOJI_NOT_FOUND"
+    assert "续火花" in e.value.message
+    with pytest.raises(D.IMError) as e:
+        D._emoji_pick(items, "", 9)
+    assert e.value.code == "EMOJI_NOT_FOUND"
+    with pytest.raises(D.IMError) as e:
+        D._emoji_pick(items, "", None)
+    assert e.value.code == "BAD_INPUT"
+
+
+def test_count_my_media_counts_native_emoji():
+    # 原生表情也是「无文字无 item」的媒体消息（aweType 507），必须计入
+    msgs = [
+        {"from": "me", "text": "", "kind": "sticker", "item_id": "",
+         "image_uri": "emoji://x", "image_id": ""},
+        {"from": "them", "text": "", "kind": "sticker", "item_id": "",
+         "image_uri": "emoji://y", "image_id": ""},
+    ]
+    assert D.count_my_media(msgs) == 1

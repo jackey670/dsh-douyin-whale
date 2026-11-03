@@ -67,6 +67,9 @@ const HELP = `douyin.mjs — 大肥鱼抖音适配层
   meme list                                   列出可用图库
   dm-image --url <CDN地址> [--out FILE]       下载私信里收到的表情/图片（给模型看）
   share --aweme <ID> --to <昵称> [--send]    把视频以原生分享卡片发给对方
+  emoji list --to <昵称>                     列抖音原生表情面板（编号截图，不发送）
+  emoji send --to <昵称> --label <中文名> [--send]
+                                             发一个原生表情（默认 dry-run 只预览）
   read-dm --from <昵称> [--limit N]          读私信（提取视频链接）
   help                                      显示本说明
 
@@ -383,6 +386,54 @@ async function run() {
       ok(payload);
       if (payload.ok && reallySend && payload.data?.sent) {
         markReplySent(undefined, options.text ? String(options.text) : `视频分享 ${aweme}`, { video: aweme });
+      }
+      if (!payload.ok) process.exitCode = 1;
+      return;
+    }
+    case 'emoji': {
+      // emoji list --to <昵称>                 列面板（带编号截图，不点任何表情）
+      // emoji send --to <昵称> --label <名> [--send]  发一个原生表情
+      const sub = String(args[0] || '').toLowerCase();
+      const to = options.to;
+      if (!to) return fail(`emoji ${sub || '?'} 需要 --to <昵称>`);
+      if (sub !== 'list' && sub !== 'send') return fail('emoji 子命令只支持 list / send');
+
+      const reallySend = sub === 'send' && options.send === true;
+      // 调度器/值班模式：一轮只发一条。表情和文字/贴图共用同一个标记。
+      const marker = reallySend ? readReplyMarker() : null;
+      if (marker?.sent) {
+        return fail('本轮已经发过一条私信（调度器限制：每条内容只回一次）', {
+          item_id: marker.item_id,
+        });
+      }
+
+      const { spawnSync } = await import('node:child_process');
+      const py = findImPython();
+      const imScript = process.env.DOUYIN_IM_SCRIPT || path.join(ROOT, 'python', 'douyin_im.py');
+      const env = {
+        ...process.env,
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        DOUYIN_DATA_DIR: DATA_DIR,
+        DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
+      };
+      const pyArgs = [imScript, sub === 'list' ? 'emoji-list' : 'emoji-send', '--to', to];
+      if (sub === 'send') {
+        const label = String(options.label || '').trim();
+        const index = Number(options.index || 0);
+        if (!label && !index) return fail('emoji send 需要 --label <中文名> 或 --index N');
+        if (label) pyArgs.push('--label', label);
+        if (index) pyArgs.push('--index', String(index));
+        if (reallySend) pyArgs.push('--send');
+      }
+
+      const result = spawnSync(py, pyArgs, { env, timeout: 200_000, encoding: 'utf8', windowsHide: true });
+      let payload;
+      try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
+      catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
+      ok(payload);
+      if (payload.ok && reallySend && payload.data?.sent) {
+        markReplySent(undefined, '', { emoji: true });
       }
       if (!payload.ok) process.exitCode = 1;
       return;

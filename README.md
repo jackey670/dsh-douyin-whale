@@ -240,9 +240,9 @@ llm-pi-ai:
 
 值班环境的已知限制：宿主后台会话没有 shell/文件工具（审批类工具不下发），
 所以值班模式的动作用工具完成——发私信 `douyin_dm_send`、挑表情 `douyin_meme_pick`、
-看主人发的图 `douyin_sticker_look`（图片作为工具结果进模型对话）、分享视频 `douyin_dm_share`。
-日记写不了（无文件工具）；视频按 `douyin_video` 的文案回复，抽帧看画面是
-独立调度器的路径。
+看主人发的图 `douyin_sticker_look`（图片作为工具结果进模型对话）、分享视频 `douyin_dm_share`、
+发抖音原生表情 `douyin_emoji_list` + `douyin_emoji_send`。日记写不了（无文件工具）；
+视频先用 `douyin_frames` 抽帧看画面再回复。
 
 生命周期照抄 dsh-douyin-scroll 值班鱼的三步链：`agents.get(sid)` 找 live →
 `resume({resumeSessionId})` 跨重启恢复 → `create({sessionId, meta, setup})`
@@ -449,6 +449,8 @@ douyin_status                                   # 先看状态
 douyin_hot({"count": 10})                       # 热榜
 douyin_search({"keyword": "开源", "limit": 5})   # 搜索
 douyin_video({"aweme_id": "7xxxxxxxxxxxxxx"})   # 视频详情
+douyin_emoji_list({"to": "主人"})                # 看原生表情面板（带编号截图）
+douyin_emoji_send({"to": "主人", "label": "晚上好", "send": true})  # 发一个原生表情
 ```
 
 看视频内容（推荐路径）：
@@ -683,7 +685,7 @@ dsh-douyin-whale/
 ├── douyin.mjs                   # 独立命令行（自动拉起本地 HTTP API）
 ├── lib/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
-│   ├── tools.js                 # 16 个工具定义
+│   ├── tools.js                 # 18 个工具定义
 │   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
 │   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）+ 原子写
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现

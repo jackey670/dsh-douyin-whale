@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.9.0 — 2026-11-03
+
+抖音原生表情面板直发：`emoji-list` / `emoji-send`，值班和调度器两条路径都能用。
+
+### 新增
+
+- **`emoji-list` / `emoji-send` 子命令**（`python/douyin_im.py`）：点开聊天输入框的
+  表情面板，列出账号自带的 21 个原生表情（中文标签 + 1 起编号 + 面板编号截图）。
+  面板可视区只放得下两行多，按行高截 3 张，保证每行都有一张是完整的。
+- **`douyin.mjs emoji list|send`**：给调度器 / 命令行用；`send` 默认 dry-run
+  只截选中表情的预览，真发要 `--send` + `DOUYIN_IM_ALLOW_SEND=1`，
+  并和文字/贴图共用「一轮只发一条」标记（标记新增 `emoji` 字段）。
+- **DSH 工具 `douyin_emoji_list` / `douyin_emoji_send`**（16→18）：列表把面板截图
+  经宿主 attachments 服务作为 image 块带进对话，模型看得到图标再按标签发；
+  发送后按回读确认才返回 `sent`。
+- **纯表情回复的回读**：表情没有正文，调度器和值班 tick 都新增
+  `meMediaCount()`——「我发的媒体条数 +1」才算送达，标记 `emoji: true` 时生效；
+  日志会写「原生表情，媒体 N→M 条」。
+- 提示词接入：值班系统提示和调度器 `AGENTS.md` 都写明「表情顶替文字，
+  一轮只发一条，不要文字和表情各发一条」。
+
+### 关键实测（2026-11-03）
+
+- 面板结构：`.componentsemojiemojiPanel` > `.componentsemojitabPanel` >
+  `.emojiEmojiItememojiItem`（img + 中文标签）；21 个表情，5 列、可滚动。
+- **点格子就是直接发**（没有「插入输入框」这步）；面板底部 tab 栏会盖住
+  第三行，按坐标点会点到 tab——改用 `locator.click()` 自动滚动后正常。
+- 回读：发出去的表情是 `aweType 507`、`kind: sticker`，`image_uri` 里带
+  `-ts-<hex 中文名>`；媒体条数 2→3 且 token 对得上。
+- 真机发出「晚上好」「比心」各一个（发到主人自己的会话）。
+
+### 验证
+
+- `npm test`：Python 32 + JS 71 项全绿（新增表情名解码/选择/媒体计数、
+  值班 tick 纯表情回读用例）。
+- `douyin.mjs emoji list` / `emoji send`（dry-run）真机通过。
+
 ## 1.8.0 — 2026-11-03
 
 值班大脑看懂视频画面：`douyin_frames` 工具（抽帧图批量进模型对话）。

@@ -226,6 +226,18 @@ function meTextSet(dm) {
   return set;
 }
 
+/** 「我发的」媒体条数（原生表情/贴纸/图片）。纯表情回复没有正文，回读靠它 +1。
+ *  fiber 读不到（一条结构化消息都没有）返回 null。 */
+function meMediaCount(dm) {
+  const msgs = Array.isArray(dm?.messages) ? dm.messages : [];
+  const objs = msgs.filter((m) => m && typeof m === 'object');
+  if (!objs.length) return null;
+  return objs.filter((m) => m.from === 'me' && (
+    m.image_uri || m.image_id || m.kind === 'sticker'
+    || (String(m.text || '').trim() === '' && !m.item_id)
+  )).length;
+}
+
 // ── 每轮只发一条的标记（douyin.mjs send 读它，实现见 lib/reply_marker.js）──
 function beginWakeMarker(item) { beginReplyMarker(DSH_HOME, item) }
 function readWakeMarker() { return readReplyMarker(DSH_HOME) }
@@ -316,6 +328,7 @@ async function tick({ manual = false } = {}) {
         + `（stderr=${String(dl.stderr || '').slice(-120)}）`);
     }
     const meBefore = meTextSet(dm);
+    const meMediaBefore = meMediaCount(dm);
     const mem = dmContext(DSH_HOME, ownerNick);
     // 表情包：按配置的概率允许本轮带图；sticker（主人发的表情）必须带图回敬
     const memeCfg = cfg.meme ?? {};
@@ -348,7 +361,12 @@ async function tick({ manual = false } = {}) {
       const expected = normalizeText(marker?.text);
       // 有标记就以标记里的正文为准（能确认「这一条就是回这条内容的」）；
       // 没标记（agent 没发）才退回「任意新正文」。
-      const delivered = Boolean(expected) && fresh.some(t => t === expected || t.includes(expected) || expected.includes(t));
+      const textDelivered = Boolean(expected) && fresh.some(t => t === expected || t.includes(expected) || expected.includes(t));
+      // 纯原生表情回复没有正文：按「我发的媒体条数 +1」确认
+      const meMediaAfter = after ? meMediaCount(after) : null;
+      const emojiDelivered = Boolean(marker?.emoji)
+        && meMediaBefore !== null && meMediaAfter !== null && meMediaAfter > meMediaBefore;
+      const delivered = textDelivered || emojiDelivered;
 
       if (delivered) {
         const newSt = readState();
@@ -360,13 +378,15 @@ async function tick({ manual = false } = {}) {
         try {
           if (after?.messages?.length) mergeDmMemory(DSH_HOME, ownerNick, after.messages);
         } catch (e) { log(`[tick] 记忆写入失败（不影响回复）: ${e.message}`); }
-        log(`[tick] ${next.id} 已确认送达（回复 ${expected.length || fresh[0].length} 字），剩余 ${pending.length - 1} 条`);
+        log(`[tick] ${next.id} 已确认送达（${emojiDelivered && !textDelivered
+          ? `原生表情，媒体 ${meMediaBefore}→${meMediaAfter} 条`
+          : `回复 ${expected.length || fresh[0].length} 字`}），剩余 ${pending.length - 1} 条`);
       } else {
         const attempts = (next.attempts || 0) + 1;
         const reason = marker?.sent ? 'sent-but-not-readback' : 'no-send';
         updateState((cur) => ({ ...cur, queue: bumpAttempt(cur.queue, next.id, reason) }));
         log(`[tick] ⚠️ ${next.id} 未确认到私信（${reason}，第 ${attempts}/${MAX_ATTEMPTS} 次）`
-          + `（回读${meAfter === null ? '失败' : '无匹配'}）`
+          + `（回读${meAfter === null ? '失败' : '无匹配'}，媒体 ${meMediaBefore ?? '?'}→${meMediaAfter ?? '?'}）`
           + (attempts >= MAX_ATTEMPTS ? '，已标记失败，不再重试' : '，下轮重试'));
       }
 

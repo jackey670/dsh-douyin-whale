@@ -19,6 +19,8 @@
   groups [--limit N]           只列疑似群聊
   send --to <昵称> --text <文>  [--send] [--screenshot]
   group-send --group <群名> --text <文> [--send]
+  emoji-list --to <昵称>         列原生表情面板（带编号截图，不发送）
+  emoji-send --to <昵称> --label <名>|--index N [--send]
 
 依赖
 ----
@@ -194,6 +196,15 @@ SEND_BUTTONS = (
     'button[aria-label*="发送"]',
     '[role="button"][aria-label*="发送"]',
 )
+
+# 抖音内置表情面板（2026-11-03 实测定版）：
+#   .componentsemojiemojiPanel  整个弹层（贴着输入框右下角）
+#   .componentsemojitabPanel    格子区（可滚动，一排 5 个）
+#   .emojiEmojiItememojiItem    单格（img + 底部中文标签）
+# 只发账号自带的那一套表情；收藏/贴纸/GIF 是别的 tab，不在这个功能里。
+EMOJI_PANEL_SEL = ".componentsemojiemojiPanel"
+EMOJI_GRID_SEL = ".componentsemojitabPanel"
+EMOJI_ITEM_SEL = ".emojiEmojiItememojiItem"
 
 # 会话列表中"自己发出的消息"气泡（用于发送确认）
 OUTGOING = (
@@ -2187,6 +2198,403 @@ def count_my_media(msgs: list[dict] | None) -> int | None:
     )
 
 
+def _emoji_name_from_src(src: str) -> str:
+    """从表情图 URL 里解出中文名。
+
+    实测抖音的 im-resource 文件名是 ``<时间戳>-ts-<hex><扩展名hex>``，
+    hex 段是 UTF-8 的文件名（如 e6999ae4b88ae5a5bd = 晚上好）。解不出来就空。
+    """
+    m = re.search(r"-ts-([0-9a-f]+)", src or "", re.I)
+    if not m:
+        return ""
+    try:
+        return bytes.fromhex(m.group(1)).decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _emoji_token(src: str) -> str:
+    """表情的身份 token（URL 里 -ts- 后面的 hex）；回读匹配用。"""
+    m = re.search(r"-ts-([0-9a-f]+)", src or "", re.I)
+    return m.group(1).lower() if m else ""
+
+
+# 打开表情面板：先看是不是已经开着，没有就点工具栏那个 iconAction 图标。
+# 只点面板开关，不点任何表情格子。
+EMOJI_OPEN_JS = r"""
+() => {
+  const panel = document.querySelector('.componentsemojiemojiPanel');
+  if (panel) {
+    const r = panel.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return 'already-open';
+  }
+  const editor = document.querySelector('[contenteditable="true"]');
+  let root = editor;
+  for (let i = 0; i < 6 && root; i++) root = root.parentElement;
+  if (!root) return 'no-editor';
+  const svg = [...root.querySelectorAll('svg')].find((s) => {
+    const c = String(s.className && s.className.baseVal !== undefined
+      ? s.className.baseVal : s.className || '');
+    return /iconAction/i.test(c);
+  });
+  if (!svg) return 'no-icon';
+  for (const el of [svg, svg.parentElement].filter(Boolean)) {
+    for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      try { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })); } catch (e) {}
+    }
+  }
+  return 'clicked';
+}
+"""
+
+# 读格子：下标从 1 开始（给模型和命令行都用人类编号）。
+EMOJI_ITEMS_JS = r"""
+() => {
+  const box = (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+  };
+  const panel = document.querySelector('.componentsemojiemojiPanel');
+  const grid = document.querySelector('.componentsemojitabPanel');
+  const items = [...document.querySelectorAll('.emojiEmojiItememojiItem')].map((el, i) => {
+    const img = el.querySelector('img');
+    return {
+      index: i + 1,
+      label: String(el.innerText || '').replace(/\s+/g, ' ').trim(),
+      src: img ? String(img.currentSrc || img.src || '') : '',
+      box: box(el),
+    };
+  });
+  return {
+    items,
+    panel: panel ? box(panel) : null,
+    grid: grid ? { ...box(grid), scroll_h: grid.scrollHeight,
+                   client_h: grid.clientHeight, scroll_top: grid.scrollTop } : null,
+  };
+}
+"""
+
+# 编号徽章：截图前给每个格子左上角贴一个数字，截完立刻移除。
+EMOJI_BADGE_JS = r"""
+(show) => {
+  document.querySelectorAll('.__whale_emoji_badge').forEach((n) => n.remove());
+  if (!show) return 0;
+  const tiles = [...document.querySelectorAll('.emojiEmojiItememojiItem')];
+  tiles.forEach((el, i) => {
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    const b = document.createElement('span');
+    b.className = '__whale_emoji_badge';
+    b.textContent = String(i + 1);
+    b.style.cssText = 'position:absolute;left:1px;top:1px;z-index:99999;background:#ff2d55;'
+      + 'color:#fff;font:700 11px/14px -apple-system,Segoe UI,sans-serif;padding:0 3px;'
+      + 'border-radius:3px;pointer-events:none;box-shadow:0 0 2px rgba(0,0,0,.6)';
+    el.appendChild(b);
+  });
+  return tiles.length;
+}
+"""
+
+EMOJI_SCROLL_JS = r"""
+(pos) => {
+  const grid = document.querySelector('.componentsemojitabPanel');
+  if (!grid) return -1;
+  grid.scrollTop = pos === 'bottom' ? grid.scrollHeight
+    : (pos === 'top' ? 0 : Math.max(0, Number(pos) || 0));
+  return grid.scrollTop;
+}
+"""
+
+# 点完表情后判断它是插进了输入框还是已经直接发出去了。
+EMOJI_IN_COMPOSER_JS = r"""
+() => {
+  const ed = document.querySelector('[contenteditable="true"]');
+  if (!ed) return false;
+  if (ed.querySelector('img')) return true;
+  if (ed.querySelector('[class*="Emoji"], [class*="emoji"]')) return true;
+  return false;
+}
+"""
+
+EDITOR_HTML_JS = r"""
+() => {
+  const ed = document.querySelector('[contenteditable="true"]');
+  return ed ? String(ed.innerHTML || '') : '';
+}
+"""
+
+
+async def open_emoji_panel(page) -> bool:
+    """打开表情面板。只点开关，不碰任何表情。"""
+    try:
+        clicked = await page.evaluate(EMOJI_OPEN_JS)
+    except Exception:
+        return False
+    if clicked not in ("clicked", "already-open"):
+        return False
+    try:
+        await page.wait_for_selector(EMOJI_PANEL_SEL, state="visible", timeout=6_000)
+        return True
+    except Exception:
+        return False
+
+
+async def screenshot_clip(page, name: str, clip: dict) -> str:
+    """按裁剪框截一张图（表情面板编号图用）。"""
+    os.makedirs(SHOT_DIR, exist_ok=True)
+    safe = re.sub(r"[^\w\u4e00-\u9fa5-]+", "_", name)[:30]
+    path = os.path.join(SHOT_DIR, f"{now_tag()}_{safe}.png")
+    try:
+        await page.screenshot(path=path, clip=clip)
+        return path
+    except Exception:
+        return ""
+
+
+async def screenshot_element(loc, name: str) -> str:
+    """截单个元素（dry-run 时预览选中的表情）。"""
+    os.makedirs(SHOT_DIR, exist_ok=True)
+    safe = re.sub(r"[^\w\u4e00-\u9fa5-]+", "_", name)[:30]
+    path = os.path.join(SHOT_DIR, f"{now_tag()}_{safe}.png")
+    try:
+        await loc.screenshot(path=path)
+        return path
+    except Exception:
+        return ""
+
+
+def _emoji_pick(items: list[dict], label: str, index: int | None) -> dict:
+    """按中文标签或编号选一个表情；标签优先（面板顺序变了也不怕）。"""
+    want = (label or "").strip()
+    if want:
+        for it in items:
+            if it["label"] == want:
+                return it
+        raise IMError(
+            "EMOJI_NOT_FOUND",
+            f"面板里没有「{want}」这个表情；可选：{('、'.join(i['label'] for i in items))[:400]}")
+    if index:
+        for it in items:
+            if it["index"] == int(index):
+                return it
+        raise IMError("EMOJI_NOT_FOUND", f"没有第 {index} 号表情（面板共 {len(items)} 个）")
+    raise IMError("BAD_INPUT", "需要 --label 或 --index")
+
+
+def _me_image_tokens(msgs: list[dict] | None) -> set[str]:
+    """「我发的」媒体消息里能用来对身份的特征串（uri / url / image_id）。"""
+    out: set[str] = set()
+    for m in msgs or []:
+        if m.get("from") != "me":
+            continue
+        for key in ("image_uri", "image_url", "image_id"):
+            v = str(m.get(key) or "")
+            if v:
+                out.add(v)
+    return out
+
+
+async def cmd_emoji_list(cookie_file: str | None, target: str) -> dict:
+    """列出抖音内置表情面板，并给出带编号的面板截图（不点任何表情）。"""
+    async with open_browser(cookie_file) as page:
+        await ensure_chat_page(page)
+        title = await open_conversation(page, target)
+        await page.wait_for_timeout(800)
+        if not await open_emoji_panel(page):
+            raise IMError("NO_EMOJI_PANEL", "打不开表情面板（图标没找到或前端改版）")
+        await page.wait_for_timeout(400)
+
+        info = await page.evaluate(EMOJI_ITEMS_JS) or {}
+        items = info.get("items") or []
+        if not items:
+            raise IMError("EMPTY_EMOJI_PANEL", "表情面板是空的（登录态异常或接口没返回）")
+        for it in items:
+            it["name"] = _emoji_name_from_src(it.get("src") or "")
+
+        panel = info.get("panel") or {}
+        grid = info.get("grid") or {}
+        vp = page.viewport_size or {"width": 1440, "height": 950}
+
+        def clip_of(box: dict) -> dict:
+            x = max(0, int(box.get("x", 0)) - 6)
+            y = max(0, int(box.get("y", 0)) - 6)
+            w = min(vp["width"] - x, int(box.get("w", 0)) + 12)
+            h = min(vp["height"] - y, int(box.get("h", 0)) + 12)
+            return {"x": x, "y": y, "width": max(1, w), "height": max(1, h)}
+
+        shots = []
+        if panel.get("w"):
+            # 面板可视区只放得下两行多，21 个表情要滚动才能看全。
+            # 按「一行高度」的步长截 2-3 张，保证每一行都有一张是完整的：
+            # 0 看第 1-2 行，一行高看第 2-3 行，滚到底看最后两行。
+            scroll_h = int(grid.get("scroll_h") or 0)
+            client_h = int(grid.get("client_h") or 0)
+            row_step = 0
+            if len(items) >= 6:
+                row_step = int(items[5]["box"]["y"]) - int(items[0]["box"]["y"])
+            positions = [0]
+            if scroll_h > client_h + 4:
+                if row_step > 0:
+                    positions.append(row_step)
+                positions.append(max(0, scroll_h - client_h))
+            seen_pos = []
+            for pos in positions:
+                if any(abs(pos - p) < 6 for p in seen_pos):
+                    continue
+                seen_pos.append(pos)
+                await page.evaluate(EMOJI_SCROLL_JS, pos)
+                await page.wait_for_timeout(350)
+                await page.evaluate(EMOJI_BADGE_JS, True)
+                await page.wait_for_timeout(120)
+                path = await screenshot_clip(page, f"{target}_emoji_{pos}", clip_of(panel))
+                await page.evaluate(EMOJI_BADGE_JS, False)
+                if path:
+                    shots.append({"scroll": pos, "path": path})
+            await page.evaluate(EMOJI_SCROLL_JS, "top")
+
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(200)
+        return {
+            "target": target,
+            "resolved_title": title,
+            "count": len(items),
+            "items": [{"index": it["index"], "label": it["label"], "name": it["name"]}
+                      for it in items],
+            "screenshots": shots,
+            "panel": panel,
+            "grid": grid,
+            "note": "index 从 1 开始；截图上的红色数字就是 index。只列账号自带的原生表情。",
+        }
+
+
+async def cmd_emoji_send(cookie_file: str | None, target: str, label: str,
+                         index: int | None, do_send: bool, want_shot: bool) -> dict:
+    """发一个抖音原生表情。
+
+    dry-run（默认）只打开面板、截取选中表情的预览图，**不点格子**；
+    真发时点格子后按现象区分两种路径：
+      · 直接发出（面板里的「快捷发送」）→ 回读我发的媒体消息 +1
+      · 插进输入框 → 再点一次发送按钮，然后回读
+    """
+    # 点格子本身就可能直接发送，所以 dry-run 绝不点；真发前先过本地闸。
+    if do_send:
+        check_send_gate("text")
+    async with open_browser(cookie_file) as page:
+        await ensure_chat_page(page)
+        title = await open_conversation(page, target)
+        await page.wait_for_timeout(800)
+        if not await open_emoji_panel(page):
+            raise IMError("NO_EMOJI_PANEL", "打不开表情面板（图标没找到或前端改版）")
+        await page.wait_for_timeout(400)
+
+        info = await page.evaluate(EMOJI_ITEMS_JS) or {}
+        items = info.get("items") or []
+        if not items:
+            raise IMError("EMPTY_EMOJI_PANEL", "表情面板是空的")
+        item = _emoji_pick(items, label, index)
+        token = _emoji_token(item.get("src") or "")
+
+        # 把选中的格子滚进可视区（面板底部有 tab 栏，半格被盖住时按坐标点会点到 tab）。
+        # Playwright 的 locator.click 会自己滚动到可点位置，比手算坐标稳。
+        tile = page.locator(EMOJI_ITEM_SEL).nth(item["index"] - 1)
+        try:
+            await tile.scroll_into_view_if_needed(timeout=4_000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(250)
+
+        result = {
+            "target": target,
+            "resolved_title": title,
+            "item": {"index": item["index"], "label": item["label"],
+                     "name": _emoji_name_from_src(item.get("src") or "")},
+            "dry_run": not do_send,
+            "sent": False,
+        }
+
+        if not do_send:
+            result["preview"] = await screenshot_element(tile, f"{target}_emoji_{item['index']}")
+            await page.keyboard.press("Escape")
+            result["note"] = "dry-run：只预览，没有点表情（点下去会直接发送）"
+            return result
+
+        pre = await read_messages(page)
+        pre_media = count_my_media(pre)
+        pre_tokens = _me_image_tokens(pre)
+        result["media_before"] = pre_media
+        # 输入框原样：本应用点格子是直接发送，但万一前端改成「插进输入框」，
+        # 只有内容真的变了才补点发送——否则输入框里原有的草稿会被误发出去。
+        try:
+            pre_editor = str(await page.evaluate(EDITOR_HTML_JS) or "")
+        except Exception:
+            pre_editor = ""
+
+        # 点格子（点下去就是真发，没有二次确认）
+        await tile.click(timeout=6_000)
+        await page.wait_for_timeout(1_500)
+
+        # 插进输入框的话，还要再点发送；直接发出的则面板一般已关
+        inserted = False
+        try:
+            post_editor = str(await page.evaluate(EDITOR_HTML_JS) or "")
+            looks_like_emoji = bool(await page.evaluate(EMOJI_IN_COMPOSER_JS))
+            inserted = looks_like_emoji and post_editor != pre_editor
+        except Exception:
+            inserted = False
+        if inserted:
+            result["trigger"] = await trigger_send(page)
+            await page.wait_for_timeout(1_500)
+            result["mode"] = "composed"
+        else:
+            result["mode"] = "direct"
+
+        post = await read_messages(page)
+        post_media = count_my_media(post)
+        post_tokens = _me_image_tokens(post)
+        result["media_after"] = post_media
+
+        # 刚发出的气泡可能还挂着「发送中」：媒体条数虽然涨了，但不算确认
+        still_sending = False
+        try:
+            still_sending = bool(await page.evaluate(RECENT_BUBBLES_SENDING_JS))
+        except Exception:
+            still_sending = False
+        if still_sending:
+            await page.wait_for_timeout(2_000)
+            post = await read_messages(page)
+            post_media = count_my_media(post)
+            post_tokens = _me_image_tokens(post)
+            result["media_after"] = post_media
+            try:
+                still_sending = bool(await page.evaluate(RECENT_BUBBLES_SENDING_JS))
+            except Exception:
+                still_sending = False
+        result["still_sending"] = still_sending
+
+        token_hit = bool(token) and any(token in s.lower() for s in (post_tokens - pre_tokens))
+        media_new = (pre_media is not None and post_media is not None
+                     and post_media > pre_media)
+        matched_by = "image_token" if token_hit else ("media_count" if media_new else "")
+        result["readback"] = {"matched_by": matched_by,
+                              "token": token, "new_tokens": len(post_tokens - pre_tokens)}
+
+        if still_sending or not matched_by:
+            raise IMError(
+                "SEND_UNCONFIRMED",
+                f"点了「{item['label']}」但回读没确认到新消息"
+                f"（媒体 {pre_media}→{post_media}，token {token or '无'}"
+                f"{'，还挂着发送中' if still_sending else ''}）")
+
+        record_send("text")
+        result["sent"] = True
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
+        if want_shot:
+            result["screenshot"] = await screenshot(page, target + "_emoji_sent")
+        return result
+
+
 def _fallback_text_lines(chat_text: str) -> list[str]:
     """fiber 读不到时的兜底：按行切纯文本。"""
     out = []
@@ -2368,6 +2776,17 @@ def main(argv=None) -> int:
                          help="真实发送（另需 DOUYIN_IM_ALLOW_SEND=1）")
     p_share.add_argument("--screenshot", action="store_true", default=True)
 
+    p_el = sub.add_parser("emoji-list", help="列抖音原生表情面板（带编号截图，不发送）")
+    p_el.add_argument("--to", required=True, help="对方昵称")
+
+    p_es = sub.add_parser("emoji-send", help="发一个抖音原生表情（默认 dry-run 只预览）")
+    p_es.add_argument("--to", required=True, help="对方昵称")
+    p_es.add_argument("--label", default="", help="表情中文名（优先于 --index）")
+    p_es.add_argument("--index", type=int, default=0, help="表情编号（从 1 开始，来自 emoji-list）")
+    p_es.add_argument("--send", action="store_true",
+                      help="真实发送（另需 DOUYIN_IM_ALLOW_SEND=1）")
+    p_es.add_argument("--screenshot", action="store_true", default=True)
+
     p_gate = sub.add_parser("gate", help="查看/清除发送闸（风控冷却）")
     p_gate.add_argument("--clear", action="store_true", help="清除冷却，立即允许发送")
 
@@ -2442,6 +2861,11 @@ def main(argv=None) -> int:
             if args.cmd == "share":
                 return await cmd_share(cookie_file, args.aweme, args.to, do_send, True,
                                        getattr(args, "to_id", "") or "")
+            if args.cmd == "emoji-list":
+                return await cmd_emoji_list(cookie_file, args.to)
+            if args.cmd == "emoji-send":
+                return await cmd_emoji_send(cookie_file, args.to, getattr(args, "label", "") or "",
+                                            getattr(args, "index", 0) or None, do_send, True)
             raise IMError("BAD_CMD", "unknown command")
 
         data = asyncio.run(asyncio.wait_for(run(), timeout=150))
