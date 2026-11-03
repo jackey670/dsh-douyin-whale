@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.9.1 — 2026-11-03
+
+小修小补：读私信「exit 0 但 stdout 空」的兜底，分享卡片回读配对。
+
+### 修复
+
+- **`read` 偶发空输出（~1/8）**：8 连跑复现 1 次（`status=0`、stdout/stderr
+  都空、耗时 31s vs 正常 16s）。带 `DOUYIN_IM_TRACE` 再跑时 Python 明确走到了
+  `emit`/`exit0`——JSON 是在 Node/Windows 管道侧丢的，不是脚本没执行。
+  修法三层：
+  1. `emit` 在打印的同时把同一份 JSON **原子写**到 `DOUYIN_IM_OUT_FILE`；
+  2. 调度器 / 值班 tick / `read-dm` 三个读方 stdout 空就改读回退文件；
+  3. 两边都空则**本轮原地重试一次**（读操作幂等）。
+  另加 `PYTHONUNBUFFERED=1`，排除缓冲层因素。
+- **分享卡片回读配对**：卡片没有正文，之前 `douyin.mjs share` 往标记里写
+  假正文「视频分享 <id>」，而 tick 按正文核对——永远对不上，可能重复分享。
+  现在标记只记 `video: aweme`，调度器和值班 tick 都按「我发的卡片 item_id」
+  确认（新增 `meCardIds` 回读分支，成功日志写「分享卡片 <id>，回读确认」）。
+
+### 验证
+
+- 8 连跑复现空输出 1 次；修复后 `read`/`read-dm`/`--dry-tick` 真机全通，
+  回退文件内容与 stdout 字节数一致。
+- `npm test`：Python 32 + JS 72 项全绿（新增值班 tick 分享卡片回读用例）。
+
 ## 1.9.0 — 2026-11-03
 
 抖音原生表情面板直发：`emoji-list` / `emoji-send`，值班和调度器两条路径都能用。

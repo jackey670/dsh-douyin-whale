@@ -27,7 +27,7 @@
 | 3 | agent 驱动的 sticker 回复带图率 | ✅ sticker 轮全部带图（meme_pick 硬性要求）；自然轮次继续观察 |
 | 4 | 抖音自带表情面板直发（只发账号已有表情） | ✅ **11-03 v1.9.0**：`emoji-list`/`emoji-send` + `douyin_emoji_list`/`douyin_emoji_send` 工具；面板截图进对话，按中文名发，回读确认 |
 | 5 | 值班环境已知限制：宿主工具结果暂不能带图；无文件工具（不写日记） | ✅ **10-31 起 attachment 工具面已可用**：sticker_look / frames / emoji 面板图都作为 image 块进对话；仍无文件工具（日记跳过） |
-| 6 | `douyin_im.py read` 偶发快速退出（exit 0、stdout 空，~1/5 概率）；下一轮自愈 | ⏳ 观察中，未复现规律 |
+| 6 | `douyin_im.py read` 偶发快速退出（exit 0、stdout 空，~1/5 概率）；下一轮自愈 | ✅ **11-03 v1.9.1**：8 连跑复现 1 次（status=0、空输出、31s）；trace 证明 Python 已 emit/exit0，JSON 丢在 Node/Win 管道侧。修法：`DOUYIN_IM_OUT_FILE` 原子回退文件 + 三处读方文件兜底 + 本轮重试一次 |
 | 8 | **白框再现身（10-31 22:50 / 11-01 18:19，均与值班读私信 tick 严丝合缝）**：无头 Edge 间歇性漏真窗口（Edge 自动更新后 --headless=new 行为漂移一类）。两次复现尝试均未捕获（间歇性）；已加固——无头自动化浏览器加 --window-position=-32000,-32000（headless 下无副作用，漏了也只在校外闪；有头登录/验证流程不受影响）。监视器 ~/.dsh/whitebox-watch.log 持续取证 | ✅ 已加固，观察中 |
 | 7 | ~~任务 6：抖音自带表情面板直发~~ **10-31 评估：挂起**——值班模型看不到面板缩略图，直发=随机发；等宿主 attachment 面落地后再做 | ✅ **11-03 前置依赖已解除**（v1.8.0 frames 之后），v1.9.0 完成 |
 

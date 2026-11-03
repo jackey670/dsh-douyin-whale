@@ -235,15 +235,46 @@ def now_tag() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+def _trace(msg: str) -> None:
+    """排障追踪（只在 DOUYIN_IM_TRACE 指向文件时写，正常跑零开销）。
+
+    2026-11-03 偶发「exit 0 但 stdout 空」——用它确认进程到底走到哪一步。
+    """
+    p = os.environ.get("DOUYIN_IM_TRACE")
+    if not p:
+        return
+    try:
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now().strftime('%H:%M:%S.%f')[:-3]} "
+                     f"pid={os.getpid()} {msg}\n")
+    except Exception:
+        pass
+
+
 def emit(ok: bool, data=None, code: str = "", message: str = "") -> None:
     if ok:
-        print(json.dumps({"ok": True, "data": data}, ensure_ascii=False))
+        payload = json.dumps({"ok": True, "data": data}, ensure_ascii=False)
     else:
-        print(json.dumps(
+        payload = json.dumps(
             {"ok": False, "error": {"code": code, "message": message}},
             ensure_ascii=False,
-        ))
+        )
+    # 2026-11-03：偶发「exit 0 但 stdout 空」（~1/8，Node spawnSync 侧丢失，
+    # 带追踪复现时 Python 明明走到 emit/exit0）。调用方可给 DOUYIN_IM_OUT_FILE，
+    # 这里先原子写一份 JSON 到文件，stdout 丢了也能读回来。
+    out_file = os.environ.get("DOUYIN_IM_OUT_FILE")
+    if out_file:
+        try:
+            tmp = f"{out_file}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(payload + "\n")
+            os.replace(tmp, out_file)
+        except Exception:
+            pass
+    print(payload)
     sys.stdout.flush()
+    if os.environ.get("DOUYIN_IM_TRACE"):
+        _trace(f"emit ok={ok} bytes={len(payload)}")
 
 
 class IMError(RuntimeError):
@@ -1423,12 +1454,14 @@ async def open_browser(cookie_file: str | None):
     """
     from playwright.async_api import async_playwright
 
+    _trace("browser:pw-start")
     pw = await async_playwright().start()
     browser = None
     ctx = None
     shared = False
     try:
         browser, ctx, shared = await new_context(pw, cookie_file)
+        _trace(f"browser:ctx shared={shared}")
         # 常驻浏览器里可能开着好几个标签页：优先挑已经在抖音上的那个，
         # 否则挑第一个。用错页面会让后续判定多绕一圈。
         pages = list(getattr(ctx, "pages", []) or [])
@@ -1437,6 +1470,7 @@ async def open_browser(cookie_file: str | None):
             page = pages[0] if pages else await ctx.new_page()
         yield page
     finally:
+        _trace("browser:closing")
         if shared:
             # 连的是常驻浏览器：只断开，绝不能 close 掉（下一个命令还要用）
             try:
@@ -1456,6 +1490,7 @@ async def open_browser(cookie_file: str | None):
                     await step()
                 except Exception:
                     pass
+        _trace("browser:closed")
 
 
 async def cmd_status(cookie_file: str | None) -> dict:
@@ -2611,6 +2646,7 @@ def _fallback_text_lines(chat_text: str) -> list[str]:
 
 async def cmd_read(cookie_file: str | None, target: str, limit: int = 20) -> dict:
     """打开与 target 的会话，读消息（优先 React fiber，DOM 文本兜底）。"""
+    _trace("cmd_read:start")
     async with open_browser(cookie_file) as page:
         await ensure_chat_page(page)
         title = await open_conversation(page, target)
@@ -2738,6 +2774,7 @@ def kill_stale_browsers() -> int:
 
 
 def main(argv=None) -> int:
+    _trace(f"main-start argv={sys.argv[1:3]}")
     ap = argparse.ArgumentParser(description="Douyin web IM driver (dry-run by default)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -2839,6 +2876,7 @@ def main(argv=None) -> int:
         except Exception:
             pass
         cookie_file = find_cookie_file()
+        _trace("lock-acquired")
 
         async def run():
             if args.cmd == "status":
@@ -2868,10 +2906,13 @@ def main(argv=None) -> int:
                                             getattr(args, "index", 0) or None, do_send, True)
             raise IMError("BAD_CMD", "unknown command")
 
+        _trace("run-start")
         data = asyncio.run(asyncio.wait_for(run(), timeout=150))
+        _trace(f"run-done type={type(data).__name__}")
         emit(True, data=data)
         # Playwright 的 pipe transport 线程偶尔不会随事件循环退出，导致进程
         # 挂到最后被 timeout 杀掉。JSON 已经 flush，直接退出进程。
+        _trace("exit0")
         os._exit(0)
     except asyncio.TimeoutError:
         emit(False, code="TIMEOUT", message="操作超时（150s）：页面可能加载缓慢或风控弹窗阻塞")

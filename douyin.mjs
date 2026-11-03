@@ -28,6 +28,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -385,7 +386,9 @@ async function run() {
       catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
       ok(payload);
       if (payload.ok && reallySend && payload.data?.sent) {
-        markReplySent(undefined, options.text ? String(options.text) : `视频分享 ${aweme}`, { video: aweme });
+        // 卡片没有正文；标记只记 aweme，调度器按「我发的卡片 item_id」回读
+        // （以前这里写「视频分享 <id>」假正文，回读永远对不上，会重复分享）
+        markReplySent(undefined, '', { video: aweme });
       }
       if (!payload.ok) process.exitCode = 1;
       return;
@@ -446,18 +449,49 @@ async function run() {
       const { spawnSync } = await import('node:child_process');
       const py = findImPython();
       const imScript = process.env.DOUYIN_IM_SCRIPT || path.join(ROOT, 'python', 'douyin_im.py');
-      const env = {
-        ...process.env,
-        PYTHONUTF8: '1',
-        PYTHONIOENCODING: 'utf-8',
-        DOUYIN_DATA_DIR: DATA_DIR,
-        DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
-      };
-      const result = spawnSync(py, [imScript, 'read', '--from', from, '--limit', String(limit)],
-        { env, timeout: 180_000, encoding: 'utf8', windowsHide: true });
-      let payload;
-      try { payload = JSON.parse((result.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'); }
-      catch { payload = { ok: false, error: (result.stderr ?? '').slice(0, 300) }; }
+      // 2026-11-03：read 偶发 exit 0 + stdout 空（Node/Win 管道丢失，~1/8）。
+      // Python 同时写一份 JSON 到 DOUYIN_IM_OUT_FILE；stdout 空就读文件，
+      // 再空本轮重试一次（读操作幂等）。
+      const outFile = path.join(os.tmpdir(), `dy-im-read-${process.pid}-${Date.now()}.json`);
+      let payload = null;
+      let last = null;
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const result = spawnSync(py, [imScript, 'read', '--from', from, '--limit', String(limit)],
+          {
+            env: {
+              ...process.env,
+              PYTHONUTF8: '1',
+              PYTHONIOENCODING: 'utf-8',
+              PYTHONUNBUFFERED: '1',
+              DOUYIN_DATA_DIR: DATA_DIR,
+              DOUYIN_HEADLESS: process.env.DOUYIN_HEADLESS ?? '1',
+              DOUYIN_IM_OUT_FILE: outFile,
+            },
+            timeout: 180_000, encoding: 'utf8', windowsHide: true,
+          });
+        let text = String(result.stdout ?? '').trim();
+        if (!text) {
+          try { text = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* ignore */ }
+        }
+        try { fs.rmSync(outFile, { force: true }); } catch { /* ignore */ }
+        if (!text) {
+          last = result;
+          continue;
+        }
+        try {
+          payload = JSON.parse(text.split('\n').filter((l) => l.startsWith('{')).pop() ?? '{}');
+        } catch {
+          last = result;
+          continue;
+        }
+        break;
+      }
+      if (!payload) {
+        return fail('读私信输出为空（已重试一次）', {
+          status: last?.status ?? null,
+          stderr: String(last?.stderr ?? '').slice(-200),
+        });
+      }
       ok(payload);
       if (!payload.ok) process.exitCode = 1;
       return;

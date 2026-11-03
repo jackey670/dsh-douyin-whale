@@ -78,21 +78,45 @@ const updateState = (fn) => updateStateFile(STATE_FILE, fn)
 
 // ── 直接读私信（不走 LLM，零 token）───────────────────────────────────────
 function checkDm(cookieFile, ownerNick) {
-  try {
-    const py = process.env.DOUYIN_PYTHON || path.join(ROOT, '.venv', 'Scripts', 'python.exe')
-    const imScript = path.join(ROOT, 'python', 'douyin_im.py')
-    const env = {
-      ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
-      DOUYIN_DATA_DIR: path.join(ROOT, 'data'),
-      DOUYIN_HEADLESS: '1',
-    }
-    const r = spawnSync(py, [imScript, 'read', '--from', ownerNick, '--limit', '40'],
-      { env, timeout: 180_000, encoding: 'utf8', windowsHide: true })
-    const raw = (r.stdout ?? '').trim().split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'
-    const parsed = JSON.parse(raw)
-    if (!parsed.ok) { log(`[dm-check] 读私信失败: ${parsed.error?.message ?? 'unknown'}`); return null }
-    return parsed.data
-  } catch (e) { log(`[dm-check] 异常: ${e.message}`); return null }
+  const py = process.env.DOUYIN_PYTHON || path.join(ROOT, '.venv', 'Scripts', 'python.exe')
+  const imScript = path.join(ROOT, 'python', 'douyin_im.py')
+  // 2026-11-03：read 偶发 exit 0 + stdout 空（Node/Win 管道丢失，~1/8），
+  // Python 侧同时写一份 JSON 到回退文件；stdout 空就读文件，再空本轮重试一次。
+  const outFile = path.join(os.tmpdir(), `dy-im-read-${process.pid}-${Date.now()}.json`)
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const env = {
+        ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
+        PYTHONUNBUFFERED: '1',
+        DOUYIN_DATA_DIR: path.join(ROOT, 'data'),
+        DOUYIN_HEADLESS: '1',
+        DOUYIN_IM_OUT_FILE: outFile,
+      }
+      const r = spawnSync(py, [imScript, 'read', '--from', ownerNick, '--limit', '40'],
+        { env, timeout: 180_000, encoding: 'utf8', windowsHide: true })
+      let text = (r.stdout ?? '').trim()
+      if (!text) {
+        try { text = fs.readFileSync(outFile, 'utf8').trim() } catch { text = '' }
+        if (text) log('[dm-check] stdout 为空，已从回退文件读取')
+      }
+      try { fs.rmSync(outFile, { force: true }) } catch {}
+      if (!text) {
+        log(`[dm-check] 输出为空（attempt ${attempt}/2，status=${r.status}，signal=${r.signal}）`)
+        continue
+      }
+      const raw = text.split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'
+      let parsed
+      try { parsed = JSON.parse(raw) } catch {
+        log(`[dm-check] 输出不是 JSON（attempt ${attempt}/2，status=${r.status}，`
+          + `stdout=${(r.stdout ?? '').length}B，stderr=${(r.stderr ?? '').slice(-120)}）`)
+        if (attempt === 1) continue
+        return null
+      }
+      if (!parsed.ok) { log(`[dm-check] 读私信失败: ${parsed.error?.message ?? 'unknown'}`); return null }
+      return parsed.data
+    } catch (e) { log(`[dm-check] 异常: ${e.message}`); return null }
+  }
+  return null
 }
 
 // ── ZCode 唤醒 ──────────────────────────────────────────────────────────────
@@ -238,6 +262,14 @@ function meMediaCount(dm) {
   )).length;
 }
 
+/** 「我发的」视频卡片 itemId 集合（分享回读判据：卡片没有正文，只能认 item_id） */
+function meCardIds(dm) {
+  const msgs = Array.isArray(dm?.messages) ? dm.messages : [];
+  return new Set(msgs
+    .filter((m) => m && typeof m === 'object' && m.from === 'me' && m.item_id)
+    .map((m) => String(m.item_id)));
+}
+
 // ── 每轮只发一条的标记（douyin.mjs send 读它，实现见 lib/reply_marker.js）──
 function beginWakeMarker(item) { beginReplyMarker(DSH_HOME, item) }
 function readWakeMarker() { return readReplyMarker(DSH_HOME) }
@@ -366,7 +398,11 @@ async function tick({ manual = false } = {}) {
       const meMediaAfter = after ? meMediaCount(after) : null;
       const emojiDelivered = Boolean(marker?.emoji)
         && meMediaBefore !== null && meMediaAfter !== null && meMediaAfter > meMediaBefore;
-      const delivered = textDelivered || emojiDelivered;
+      // 原生分享卡片没有正文：按标记里的 aweme_id 在「我发的」卡片里找
+      const cardDelivered = Boolean(marker?.video) && after
+        ? meCardIds(after).has(String(marker.video))
+        : false;
+      const delivered = textDelivered || emojiDelivered || cardDelivered;
 
       if (delivered) {
         const newSt = readState();
@@ -378,9 +414,11 @@ async function tick({ manual = false } = {}) {
         try {
           if (after?.messages?.length) mergeDmMemory(DSH_HOME, ownerNick, after.messages);
         } catch (e) { log(`[tick] 记忆写入失败（不影响回复）: ${e.message}`); }
-        log(`[tick] ${next.id} 已确认送达（${emojiDelivered && !textDelivered
-          ? `原生表情，媒体 ${meMediaBefore}→${meMediaAfter} 条`
-          : `回复 ${expected.length || fresh[0].length} 字`}），剩余 ${pending.length - 1} 条`);
+        log(`[tick] ${next.id} 已确认送达（${cardDelivered && !textDelivered && !emojiDelivered
+          ? `分享卡片 ${marker.video}，回读确认`
+          : emojiDelivered && !textDelivered
+            ? `原生表情，媒体 ${meMediaBefore}→${meMediaAfter} 条`
+            : `回复 ${expected.length || fresh[0].length} 字`}），剩余 ${pending.length - 1} 条`);
       } else {
         const attempts = (next.attempts || 0) + 1;
         const reason = marker?.sent ? 'sent-but-not-readback' : 'no-send';
