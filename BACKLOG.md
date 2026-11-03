@@ -4,8 +4,8 @@
 > 1. **GitHub 推送挂起**：v1.6.0（`f4cee8e` + tag）只在 GitCode；今晚 github.com 直连/代理全断。
 >    网络恢复后跑 `git push origin main refs/tags/v1.6.0`，
 >    再 `gh release create v1.6.0 --notes-file RELEASE-1.6.0.md`。
-> 2. **值班大脑已在 0.2.2 真机常驻**（模型走 wb2api）：重启宿主用 `~/.dsh/start-dsh.cmd 022`
->    （已内嵌 `DOUYIN_IM_ALLOW_SEND` 与 `WB2API_API_KEY`，wb2api 需先开着）。
+> 2. **值班大脑已在 0.2.2 真机常驻**（模型走自定义网关）：重启宿主用 `~/.dsh/start-dsh.cmd 022`
+>    （已内嵌 `DOUYIN_IM_ALLOW_SEND` 与网关 key 环境变量，网关服务需先开着）。
 >    关机前在飞的一轮会被掐断——队列/尝试次数已落盘，跨天保留，明天自然续上。
 > 3. **自然验证继续**：今晚图片上传不稳（媒体计数不涨、caption 能出去，如实报
 >    `SEND_UNCONFIRMED` 重试≤3 次）；明天网络正常应顺。任务 5（带图率）看自然轮次即可。
@@ -23,7 +23,7 @@
 | # | 事项 | 状态 |
 |---|---|---|
 | 1 | ~~DSH 0.2.2 第三方插件 client 面板 404~~ **10-30 结案：误诊**——0.2.2 对无 rev 的猜测 URL 按设计回 404；真 UI 实测 boot graph 有本插件行、面板完整渲染、API 全通（见 `docs/UPSTREAM-NOTES.md` 更正） | ✅ 非 bug |
-| 2 | 值班大脑模式的表情包回复未在真宿主实测 | ✅ **10-31 真机闭环**（v1.6.0：新增 `douyin_dm_send`/`douyin_meme_pick` 工具 + `duty.provider/model` 模型路由 + `dsh-llm-pi-ai` 挂本机 wb2api；修掉 childEnv homedir 拐跑标记、发送确认看错气泡两个真 bug） |
+| 2 | 值班大脑模式的表情包回复未在真宿主实测 | ✅ **10-31 真机闭环**（v1.6.0：新增 `douyin_dm_send`/`douyin_meme_pick` 工具 + `duty.provider/model` 模型路由 + `dsh-llm-pi-ai` 挂自定义网关；修掉 childEnv homedir 拐跑标记、发送确认看错气泡两个真 bug） |
 | 3 | agent 驱动的 sticker 回复带图率 | ✅ sticker 轮全部带图（meme_pick 硬性要求）；自然轮次继续观察 |
 | 4 | 抖音自带表情面板直发（只发账号已有表情） | 💤 低优先 |
 | 5 | 值班环境已知限制：宿主工具结果暂不能带图（值班模型看不到主人发的图，按附言/上下文挑情绪）；无文件工具（不抽帧、不写日记） | ⏳ 等宿主 attachment 工具面明确；全功能路径仍是独立调度器 |

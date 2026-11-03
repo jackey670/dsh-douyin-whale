@@ -37,7 +37,7 @@
 - `panel_api` sanitize 放行 `proactiveShare` 节（probability 钳 [0,1]、
   maxPerDay 钳 [0,20]）。
 
-### 真机验证（0.2.2 值班大脑 + wb2api）
+### 真机验证（0.2.2 值班大脑 + 自定义网关）
 
 - 看图链路：sticker_look 74ms 入库 → 模型引用图片内容（修复扩展名谎报后）。
 - 主动分享链路：douyin_hot 1.8s + douyin_search 2.2s 浏览 → dm_share 33s 卡片送达
@@ -75,7 +75,7 @@
   `douyin_meme_pick`——本地图库挑表情（直读 SQLite，无浏览器、无配额）。
 - **值班模型路由**：值班会话可用 `duty.provider`/`duty.model` 指定模型路由
   （`lib/duty_agent.js` 的 `modelSelection`），配合宿主 `dsh-llm-pi-ai` 的自定义网关声明
-  （如本机 wb2api，key 走启动环境 `apiKeyEnv`，不进配置文件）；留空跟随宿主默认。
+  （OpenAI 兼容端点，key 走启动环境 `apiKeyEnv`，不进配置文件）；留空跟随宿主默认。
   没有官方 DeepSeek key 也能跑值班大脑。
 - **任务消息工具化**：值班 agent 在宿主里拿不到 shell/Read（后台会话不给审批类工具），
   `buildTaskMessage` 从「`node douyin.mjs …` shell 指令」改为工具调用指令；
@@ -99,8 +99,8 @@
   `docs/UPSTREAM-NOTES.md` 与 `RELEASE-1.5.1.md` 的更正。
 - **值班大脑 0.2.2 真机全链路闭环**：读主人 sticker → `douyin_meme_pick` →
   `douyin_dm_send`（带图+caption，`send:true`）→ 回读确认（回复 19 字）→ 标记已回复。
-  模型路由 = 本机 wb2api（settings.yaml `llm-pi-ai.providers` 声明 +
-  启动环境 `WB2API_API_KEY`）。
+  模型路由 = 自定义网关（settings.yaml `llm-pi-ai.providers` 声明 +
+  启动环境 `apiKeyEnv` 引用的变量）。
 - 已知限制（值班环境）：宿主 tool 结果暂不能携带图片 → 值班模型看不到主人发的图
   （按附言/上下文挑情绪）；抽帧、写日记做不了（无文件工具）。独立调度器（ZCode 版）
   仍是全功能路径。

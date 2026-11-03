@@ -78,7 +78,7 @@ OpenAI 兼容端点；「api + baseURL + models 三件套 + apiKeyEnv」缺一�
 `provider: deepseek-official`）→ 插件用 `agentDefaultModel.currentSelection()`
 读出来传给 `agents.create/resume` 的 `agentOptions`。本插件 v1.6.0 起支持
 `duty.provider`/`duty.model` 覆盖（modelSelection 优先于宿主默认），配合
-pi-ai 网关即可在没有官方 key 的机器上跑值班大脑（本机：wb2api = localhost:7863）。
+pi-ai 网关即可在没有官方 key 的机器上跑值班大脑（网关地址与 key 由部署者自选）。
 
 ## 值班 agent 的工具面（2026-10-31 实测）
 

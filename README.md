@@ -206,37 +206,43 @@ node scheduler/scheduler.mjs --watch-now
 `douyin-whale-duty-v1`）：装载后 15 秒跑第一轮，之后按配置间隔轮询。
 模型和上下文由宿主管，插件只负责投任务、收结果、回读确认。
 
-**模型路由**：值班会话默认跟随宿主的 agent 默认模型（`dsh-agent-default-model`）；
-没有官方 DeepSeek key 时，可在插件配置里写 `duty.provider`/`duty.model` 指向
-宿主 `dsh-llm-pi-ai` 声明的自定义网关（OpenAI 兼容，如本机 wb2api），key 走
-启动环境（`apiKeyEnv` 引用的变量，不进配置文件）：
+**模型路由**：值班会话默认跟随宿主的默认模型（`dsh-agent-default-model`）。换模型有两种选择：
+
+- **装在 DSH 里**：直接用宿主已配置的模型——在宿主的模型设置里切换默认模型即可，插件不用改。
+- **自定义网关**：宿主 `dsh-llm-pi-ai` 支持声明 OpenAI 兼容端点。在宿主用户设置里加一个 provider 路由，
+  然后让插件配置的 `duty.provider`/`duty.model` 指向它；apiKey 用 `apiKeyEnv` 引用的环境变量传入，
+  不写进配置文件。**模型条目务必声明 `input: [text, image]`**——缺省=纯文本，
+  工具结果里的图片会被请求投影层丢掉。
 
 ```yaml
-# 插件配置（cordis.patch.yml 的 douyin-whale 行）
+# 插件配置（可选）：留空 = 跟随宿主默认模型
 duty:
-  provider: wb2api
-  model: cn:deepseek-v4.1-flash
+  provider: <pi-ai 路由名>
+  model: <模型 id>
 ```
 
 ```yaml
-# 宿主用户设置（~/.dsh/settings.yaml）
+# 宿主用户设置（~/.dsh/settings.yaml）：声明你的网关（路由名自定）
 llm-pi-ai:
   providers:
-    wb2api:
-      displayName: wb2api
-      apiKeyEnv: WB2API_API_KEY
+    <route-name>:
+      displayName: <你的网关>
+      apiKeyEnv: <存放 key 的环境变量名>
       api: openai-completions
-      baseURL: http://127.0.0.1:7863/v1
+      baseURL: <你的网关地址>
       models:
-        - id: cn:deepseek-v4.1-flash
-          contextWindow: 1000000
+        - id: <模型 id>
+          contextWindow: 200000
+          input: [text, image]
 ```
 
+独立调度器（ZCode 版）不读这份配置——它走 ZCode 自己配置的模型，在 ZCode 里切换即可。
+
 值班环境的已知限制：宿主后台会话没有 shell/文件工具（审批类工具不下发），
-所以值班模式**发私信用 `douyin_dm_send` 工具、挑表情用 `douyin_meme_pick`**，
-视频按 `douyin_video` 文案回复（不抽帧）、不写日记；宿主工具结果暂不能带图，
-值班模型看不到主人发的图（按附言/上下文挑情绪）。全功能路径仍是独立调度器
-（ZCode 版）。
+所以值班模式的动作用工具完成——发私信 `douyin_dm_send`、挑表情 `douyin_meme_pick`、
+看主人发的图 `douyin_sticker_look`（图片作为工具结果进模型对话）、分享视频 `douyin_dm_share`。
+日记写不了（无文件工具）；视频按 `douyin_video` 的文案回复，抽帧看画面是
+独立调度器的路径。
 
 生命周期照抄 dsh-douyin-scroll 值班鱼的三步链：`agents.get(sid)` 找 live →
 `resume({resumeSessionId})` 跨重启恢复 → `create({sessionId, meta, setup})`
