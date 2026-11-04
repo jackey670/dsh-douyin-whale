@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.9.2 — 2026-11-04
+
+架构合并第一步：两条运行路径共用「回读判定」和「任务提示词」。
+
+### 变更
+
+- **`lib/whale_readback.js`**：把调度器与值班大脑各自重复的回读逻辑收成纯函数——
+  `meTextSet` / `meMediaCount` / `meCardIds` / `judgeDelivery` / `deliverySummary`。
+  文字（新正文）、原生表情（媒体 +1）、分享卡片（item_id）三种送达形态一次判定，
+  fiber 读不到时保守返回。两侧 tick 都改用 `judgeDelivery`。
+- **`lib/whale_prompt.js`**：`buildWhaleTaskMessage({ mode: 'tools' | 'shell' })`
+  统一任务提示词。`tools` = 值班大脑（插件工具、无文件系统）；`shell` = 独立调度器
+  （`node douyin.mjs` + Read + 两本日记）。`scheduler/prompt.mjs` 与
+  `whale_tick.js` 的 `buildTaskMessage` 都变成薄封装，以后加回复方式只改一处。
+- 唯一文案差异：调度器视频提示里的「frames 失败」统一成「抽帧失败」（与值班一致）。
+
+### 验证
+
+- 新增 `lib/whale_readback.test.mjs`（7 项）+ `lib/whale_prompt.test.mjs`（6 项）。
+- 旧/新提示词逐字对比：text/sticker/note 完全一致，video 仅上述一处措辞统一；
+  值班 `tools` 模式四种内容全部逐字一致。
+- 真机：调度器重启后第一轮 `text:0ac4cfaa...` 用新共享代码投递 → 24 字回复 →
+  回读确认送达。
+- `npm test`：Python 32 + JS 85 全绿。
+
 ## 1.9.1 — 2026-11-03
 
 小修小补：读私信「exit 0 但 stdout 空」的兜底，分享卡片回读配对。

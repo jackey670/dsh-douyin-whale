@@ -691,6 +691,8 @@ dsh-douyin-whale/
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现
 │   ├── duty_agent.js            # 值班 agent 会话（get/resume/create 链 + followup）
 │   ├── whale_tick.js            # 一轮 tick：读私信 → 挑最早 → 投值班 → 回读确认
+│   ├── whale_readback.js        # 两条路径共用的送达判定（文字/表情/卡片）
+│   ├── whale_prompt.js          # 两条路径共用的任务提示词（tools / shell 两模式）
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

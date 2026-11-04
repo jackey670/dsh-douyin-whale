@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { dmContext, mergeDmMemory } from './memory.mjs'
 import { buildTaskPrompt } from './prompt.mjs'
 import { beginReplyMarker, endReplyMarker, readReplyMarker } from '../lib/reply_marker.js'
+import { deliverySummary, judgeDelivery, meTextSet } from '../lib/whale_readback.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
   readState as readStateFile, updateState as updateStateFile, writeState as writeStateFile,
@@ -230,45 +231,7 @@ function wakeAgent(text, tag = 'wake') {
   })
 }
 
-// ── 回读确认 ────────────────────────────────────────────────────────────────
-const normalizeText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-
-/** 「我发的」消息正文集合。
- *  不能用条数比：老消息会滚出 DOM，条数可能一进一出正好不变（实测 3→3）。
- *  用集合差——只要多出一条以前没见过的正文，就是真的发出去了。 */
-function meTextSet(dm) {
-  const msgs = Array.isArray(dm?.messages) ? dm.messages : [];
-  const objs = msgs.filter((m) => m && typeof m === 'object');
-  // 一条结构化消息都没有 ⇒ fiber 读不到，无法判断（返回 null）
-  if (!objs.length) return null;
-  const set = new Set();
-  for (const m of objs) {
-    if (m.from !== 'me') continue;
-    const t = normalizeText(m.text);
-    if (t) set.add(t);
-  }
-  return set;
-}
-
-/** 「我发的」媒体条数（原生表情/贴纸/图片）。纯表情回复没有正文，回读靠它 +1。
- *  fiber 读不到（一条结构化消息都没有）返回 null。 */
-function meMediaCount(dm) {
-  const msgs = Array.isArray(dm?.messages) ? dm.messages : [];
-  const objs = msgs.filter((m) => m && typeof m === 'object');
-  if (!objs.length) return null;
-  return objs.filter((m) => m.from === 'me' && (
-    m.image_uri || m.image_id || m.kind === 'sticker'
-    || (String(m.text || '').trim() === '' && !m.item_id)
-  )).length;
-}
-
-/** 「我发的」视频卡片 itemId 集合（分享回读判据：卡片没有正文，只能认 item_id） */
-function meCardIds(dm) {
-  const msgs = Array.isArray(dm?.messages) ? dm.messages : [];
-  return new Set(msgs
-    .filter((m) => m && typeof m === 'object' && m.from === 'me' && m.item_id)
-    .map((m) => String(m.item_id)));
-}
+// ── 回读确认（共享实现见 lib/whale_readback.js）────────────────────────────
 
 // ── 每轮只发一条的标记（douyin.mjs send 读它，实现见 lib/reply_marker.js）──
 function beginWakeMarker(item) { beginReplyMarker(DSH_HOME, item) }
@@ -360,7 +323,6 @@ async function tick({ manual = false } = {}) {
         + `（stderr=${String(dl.stderr || '').slice(-120)}）`);
     }
     const meBefore = meTextSet(dm);
-    const meMediaBefore = meMediaCount(dm);
     const mem = dmContext(DSH_HOME, ownerNick);
     // 表情包：按配置的概率允许本轮带图；sticker（主人发的表情）必须带图回敬
     const memeCfg = cfg.meme ?? {};
@@ -386,23 +348,8 @@ async function tick({ manual = false } = {}) {
       // ⚠️ agent 跑完 ≠ 私信发出去了。它会写日记、会报告「登录态过期」，
       //    这些都算 r.ok。必须回读一次私信，确认「我发的」真的多了一条新正文。
       const after = meBefore === null ? null : checkDm(null, ownerNick);
-      const meAfter = after ? meTextSet(after) : null;
-      const fresh = (meBefore && meAfter)
-        ? [...meAfter].filter(t => !meBefore.has(t))
-        : [];
-      const expected = normalizeText(marker?.text);
-      // 有标记就以标记里的正文为准（能确认「这一条就是回这条内容的」）；
-      // 没标记（agent 没发）才退回「任意新正文」。
-      const textDelivered = Boolean(expected) && fresh.some(t => t === expected || t.includes(expected) || expected.includes(t));
-      // 纯原生表情回复没有正文：按「我发的媒体条数 +1」确认
-      const meMediaAfter = after ? meMediaCount(after) : null;
-      const emojiDelivered = Boolean(marker?.emoji)
-        && meMediaBefore !== null && meMediaAfter !== null && meMediaAfter > meMediaBefore;
-      // 原生分享卡片没有正文：按标记里的 aweme_id 在「我发的」卡片里找
-      const cardDelivered = Boolean(marker?.video) && after
-        ? meCardIds(after).has(String(marker.video))
-        : false;
-      const delivered = textDelivered || emojiDelivered || cardDelivered;
+      const j = judgeDelivery({ marker, before: dm, after });
+      const { delivered, textDelivered, emojiDelivered, cardDelivered } = j;
 
       if (delivered) {
         const newSt = readState();
@@ -414,17 +361,16 @@ async function tick({ manual = false } = {}) {
         try {
           if (after?.messages?.length) mergeDmMemory(DSH_HOME, ownerNick, after.messages);
         } catch (e) { log(`[tick] 记忆写入失败（不影响回复）: ${e.message}`); }
-        log(`[tick] ${next.id} 已确认送达（${cardDelivered && !textDelivered && !emojiDelivered
+        const summary = cardDelivered && !textDelivered && !emojiDelivered
           ? `分享卡片 ${marker.video}，回读确认`
-          : emojiDelivered && !textDelivered
-            ? `原生表情，媒体 ${meMediaBefore}→${meMediaAfter} 条`
-            : `回复 ${expected.length || fresh[0].length} 字`}），剩余 ${pending.length - 1} 条`);
+          : deliverySummary(j);
+        log(`[tick] ${next.id} 已确认送达（${summary}），剩余 ${pending.length - 1} 条`);
       } else {
         const attempts = (next.attempts || 0) + 1;
         const reason = marker?.sent ? 'sent-but-not-readback' : 'no-send';
         updateState((cur) => ({ ...cur, queue: bumpAttempt(cur.queue, next.id, reason) }));
         log(`[tick] ⚠️ ${next.id} 未确认到私信（${reason}，第 ${attempts}/${MAX_ATTEMPTS} 次）`
-          + `（回读${meAfter === null ? '失败' : '无匹配'}，媒体 ${meMediaBefore ?? '?'}→${meMediaAfter ?? '?'}）`
+          + `（回读${j.textAfter === null ? '失败' : '无匹配'}，媒体 ${j.mediaBefore ?? '?'}→${j.mediaAfter ?? '?'}）`
           + (attempts >= MAX_ATTEMPTS ? '，已标记失败，不再重试' : '，下轮重试'));
       }
 
