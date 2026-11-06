@@ -690,9 +690,11 @@ dsh-douyin-whale/
 │   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）+ 原子写
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现
 │   ├── duty_agent.js            # 值班 agent 会话（get/resume/create 链 + followup）
-│   ├── whale_tick.js            # 一轮 tick：读私信 → 挑最早 → 投值班 → 回读确认
+│   ├── whale_tick.js            # 值班 tick 入口（前置检查 + brain 适配器 + 主动分享）
+│   ├── whale_round.js           # 共享回合引擎（调度器/值班共用主循环 + 时段判定）
 │   ├── whale_readback.js        # 两条路径共用的送达判定（文字/表情/卡片）
 │   ├── whale_prompt.js          # 两条路径共用的任务提示词（tools / shell 两模式）
+│   ├── dm_reader.js             # 共享的「读一次私信」（文件回退 + 本轮重试）
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

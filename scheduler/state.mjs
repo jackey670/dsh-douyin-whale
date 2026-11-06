@@ -61,9 +61,9 @@ export function readState(file, now = new Date()) {
   const repliedIds = Array.isArray(raw.repliedIds) ? raw.repliedIds.filter((x) => typeof x === 'string') : [];
   const queue = normalizeQueue(raw.queue);
   if (raw.date !== today(now)) {
-    // 跨天：只重置当天计数，保留 repliedIds / queue
+    // 跨天：只重置当天计数，保留 repliedIds / queue（shares 也属当天计数，清零）
     return {
-      date: today(now), watches: 0, memes: 0, repliedIds, queue,
+      date: today(now), watches: 0, memes: 0, shares: 0, repliedIds, queue,
       loginFails: 0, loginBlockedUntil: '',
     };
   }
@@ -71,6 +71,9 @@ export function readState(file, now = new Date()) {
     date: raw.date,
     watches: Number(raw.watches) || 0,
     memes: Number(raw.memes) || 0,
+    // shares 是主动分享的每日计数（值班路径写）——调度器写状态时必须透传，
+    // 否则两种模式并存时插件累计的分享数会被抹掉。
+    shares: Number(raw.shares) || 0,
     repliedIds,
     queue,
     loginFails: Number(raw.loginFails) || 0,

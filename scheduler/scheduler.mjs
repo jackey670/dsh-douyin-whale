@@ -16,12 +16,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawn, spawnSync, execSync, execFileSync } from 'node:child_process'
+import { spawn, execSync, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dmContext, mergeDmMemory } from './memory.mjs'
 import { buildTaskPrompt } from './prompt.mjs'
-import { beginReplyMarker, endReplyMarker, readReplyMarker } from '../lib/reply_marker.js'
-import { deliverySummary, judgeDelivery, meTextSet } from '../lib/whale_readback.js'
+import { runWatchRound, inWatchWindow } from '../lib/whale_round.js'
+import { readDm } from '../lib/dm_reader.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
   readState as readStateFile, updateState as updateStateFile, writeState as writeStateFile,
@@ -60,65 +60,13 @@ function readJson(f, d = null) { try { return JSON.parse(fs.readFileSync(f, 'utf
 function writeJson(f, o) { try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 2) + '\n') } catch (e) { log(`写文件失败: ${e.message}`) } }
 function readConfig() { return readJson(CFG_FILE, {}) || {} }
 function isAlive(pid) { if (!pid) return false; try { process.kill(pid, 0); return true } catch { return false } }
-function nowMin() { const d = new Date(); return d.getHours() * 60 + d.getMinutes() }
-function inWindow(wins) {
-  const arr = Array.isArray(wins) ? wins : [{ start: '00:00', end: '24:00' }]
-  const m = nowMin()
-  return arr.some(w => {
-    const [sh, sm] = String(w.start ?? '').split(':').map(Number)
-    const [eh, em] = String(w.end ?? '').split(':').map(Number)
-    return m >= ((sh === 24 ? 1440 : sh * 60) + (sm || 0)) && m < ((eh === 24 ? 1440 : eh * 60) + (em || 0))
-  })
-}
+const defaultPy = () => process.env.DOUYIN_PYTHON || path.join(ROOT, '.venv', 'Scripts', 'python.exe')
 
 // ── 状态 ────────────────────────────────────────────────────────────────────
 // 具体规则在 state.mjs（跨天只清计数、队列旧→新、文字消息也入队）
 const readState = () => readStateFile(STATE_FILE)
 const writeState = (st) => writeStateFile(STATE_FILE, st)
 const updateState = (fn) => updateStateFile(STATE_FILE, fn)
-
-// ── 直接读私信（不走 LLM，零 token）───────────────────────────────────────
-function checkDm(cookieFile, ownerNick) {
-  const py = process.env.DOUYIN_PYTHON || path.join(ROOT, '.venv', 'Scripts', 'python.exe')
-  const imScript = path.join(ROOT, 'python', 'douyin_im.py')
-  // 2026-11-03：read 偶发 exit 0 + stdout 空（Node/Win 管道丢失，~1/8），
-  // Python 侧同时写一份 JSON 到回退文件；stdout 空就读文件，再空本轮重试一次。
-  const outFile = path.join(os.tmpdir(), `dy-im-read-${process.pid}-${Date.now()}.json`)
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const env = {
-        ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
-        PYTHONUNBUFFERED: '1',
-        DOUYIN_DATA_DIR: path.join(ROOT, 'data'),
-        DOUYIN_HEADLESS: '1',
-        DOUYIN_IM_OUT_FILE: outFile,
-      }
-      const r = spawnSync(py, [imScript, 'read', '--from', ownerNick, '--limit', '40'],
-        { env, timeout: 180_000, encoding: 'utf8', windowsHide: true })
-      let text = (r.stdout ?? '').trim()
-      if (!text) {
-        try { text = fs.readFileSync(outFile, 'utf8').trim() } catch { text = '' }
-        if (text) log('[dm-check] stdout 为空，已从回退文件读取')
-      }
-      try { fs.rmSync(outFile, { force: true }) } catch {}
-      if (!text) {
-        log(`[dm-check] 输出为空（attempt ${attempt}/2，status=${r.status}，signal=${r.signal}）`)
-        continue
-      }
-      const raw = text.split('\n').filter(l => l.startsWith('{')).pop() ?? '{}'
-      let parsed
-      try { parsed = JSON.parse(raw) } catch {
-        log(`[dm-check] 输出不是 JSON（attempt ${attempt}/2，status=${r.status}，`
-          + `stdout=${(r.stdout ?? '').length}B，stderr=${(r.stderr ?? '').slice(-120)}）`)
-        if (attempt === 1) continue
-        return null
-      }
-      if (!parsed.ok) { log(`[dm-check] 读私信失败: ${parsed.error?.message ?? 'unknown'}`); return null }
-      return parsed.data
-    } catch (e) { log(`[dm-check] 异常: ${e.message}`); return null }
-  }
-  return null
-}
 
 // ── ZCode 唤醒 ──────────────────────────────────────────────────────────────
 const WAKE_BACKOFF_MS = 5 * 60_000
@@ -231,40 +179,14 @@ function wakeAgent(text, tag = 'wake') {
   })
 }
 
-// ── 回读确认（共享实现见 lib/whale_readback.js）────────────────────────────
-
-// ── 每轮只发一条的标记（douyin.mjs send 读它，实现见 lib/reply_marker.js）──
-function beginWakeMarker(item) { beginReplyMarker(DSH_HOME, item) }
-function readWakeMarker() { return readReplyMarker(DSH_HOME) }
-function endWakeMarker() { endReplyMarker(DSH_HOME) }
-
-/** 宽松 JSON 提取：优先整体 parse（douyin.mjs 是多行美化输出），不行再扫平衡块 */
-function parseJsonLoose(text) {
-  const s = String(text || '').trim();
-  if (!s) return {};
-  try { return JSON.parse(s); } catch { /* 不是整段 JSON 就继续扫 */ }
-  let depth = 0, start = -1;
-  for (let i = 0; i < s.length; i += 1) {
-    const ch = s[i];
-    if (ch === '{') { if (depth === 0) start = i; depth += 1; }
-    else if (ch === '}') {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        try { return JSON.parse(s.slice(start, i + 1)); } catch { /* 继续找下一段 */ }
-        start = -1;
-      }
-    }
-  }
-  return {};
-}
-
 // ── tick ────────────────────────────────────────────────────────────────────
+// 回读判定/标记/队列操作都走共享引擎（lib/whale_round.js + lib/whale_readback.js）
 let checking = false
 async function tick({ manual = false } = {}) {
   if (checking || waking) return
   const cfg = readConfig()
   if (cfg.watch?.enabled === false) return
-  if (!inWindow(cfg.watch?.windows)) {
+  if (!inWatchWindow(cfg.watch?.windows)) {
     if (manual) log('[tick] 当前不在观看时段内')
     return
   }
@@ -277,114 +199,45 @@ async function tick({ manual = false } = {}) {
   checking = true
   try {
     const st = readState()
-    const dm = checkDm(null, ownerNick)
-    if (!dm) return
+    const py = defaultPy()
+    const dm = readDm({ ownerNick, py, root: ROOT, dataDir: path.join(ROOT, 'data'), log })
+    if (!dm || dm.__error) return
 
-    // 主人发来的内容 → 先并入本地队列（页面只渲染十来条，老卡片会被挤掉）。
-    // 视频/图文带 item_id；纯文字（kind=text）和表情（kind=sticker）没有 item_id。
-    const all = Array.isArray(dm.messages)
-      ? dm.messages.filter(m => m && typeof m === 'object' && m.from !== 'me')
-      : [];
-    // 文字消息只取最近 5 条：第一次接入时别把历史聊天一口气全回一遍。
-    const textMsgs = all.filter(m => !m.item_id && m.kind !== 'sticker' && String(m.text || '').trim());
-    const keepTexts = new Set(textMsgs.slice(-5));
-    const items = all.filter(m => m.item_id || m.kind === 'sticker' || keepTexts.has(m));
+    const mem = dmContext(DSH_HOME, ownerNick)
+    const result = await runWatchRound({
+      cfg, dm, ownerNick, manual,
+      state: { read: () => readState(), update: (mutate) => updateState(mutate) },
+      ops: { mergeQueue, pendingOf, bumpAttempt, capRepliedIds, maxAttempts: MAX_ATTEMPTS },
+      brain: { dispatch: async ({ prompt }) => wakeAgent(prompt, 'watch') },
+      buildPrompt: (ctx) => buildTaskPrompt({
+        ...ctx, root: ROOT, home: DSH_HOME,
+        persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle },
+      }),
+      checkDm: () => readDm({ ownerNick, py, root: ROOT, dataDir: path.join(ROOT, 'data'), log }),
+      log, home: DSH_HOME, mem, root: ROOT,
+      mergeMemory: (after) => mergeDmMemory(DSH_HOME, ownerNick, after.messages),
+      onEmpty: async ({ merged, manual: isManual }) => {
+        // 没有待回复的内容 → 跳过（零 token）
+        if (isManual) {
+          log(`[tick] 没有待回复的内容（队列 ${merged.queue.length} 条，已回复 ${(merged.repliedIds ?? []).length} 条）`)
+        }
+      },
+    })
 
-    const merged = updateState((cur) => ({ ...cur, queue: mergeQueue(cur.queue, items) }));
-    const queued = merged.queue;
-    if (queued.length > (st.queue ?? []).length) {
-      log(`[tick] 队列新增 ${queued.length - (st.queue ?? []).length} 条（共 ${queued.length}）`);
-    }
-    const replied = new Set(merged.repliedIds ?? []);
-
-    const dailyMax = Number(cfg.watch?.dailyMax) || 0;
-    if (!manual && dailyMax > 0 && (merged.watches ?? 0) >= dailyMax) {
-      log(`[tick] 今日已回复 ${merged.watches} 条，达到上限 ${dailyMax}，明天继续`);
-      return;
-    }
-
-    const pending = pendingOf(queued, merged.repliedIds);
-
-    // 没有待回复的内容 → 跳过（零 token）
-    if (!pending.length) {
-      if (manual) log(`[tick] 没有待回复的内容（队列 ${queued.length} 条，已回复 ${replied.size} 条）`);
-      return;
-    }
-
-    const next = pending[0];
-    // 表情包回复前先把对方发的图下载到本地，模型才能 Read 看画面
-    if (next.kind === 'sticker' && next.image_url && !next.image_path) {
-      const dl = spawnSync(process.execPath, [
-        path.join(ROOT, 'douyin.mjs'), 'dm-image', '--url', next.image_url,
-      ], { encoding: 'utf8', timeout: 90_000, windowsHide: true });
-      const j = parseJsonLoose(dl.stdout);
-      if (j.ok) next.image_path = j.path;
-      else log(`[tick] 表情图下载失败：${j.error ?? dl.error?.message ?? 'unknown'}`
-        + `（stderr=${String(dl.stderr || '').slice(-120)}）`);
-    }
-    const meBefore = meTextSet(dm);
-    const mem = dmContext(DSH_HOME, ownerNick);
-    // 表情包：按配置的概率允许本轮带图；sticker（主人发的表情）必须带图回敬
-    const memeCfg = cfg.meme ?? {};
-    const memeAllowed = next.kind === 'sticker'
-      || (memeCfg.enabled !== false
-        && Math.random() < (Number(memeCfg.probability) || 0.3)
-        && (merged.memes ?? 0) < (Number(memeCfg.maxPerDay) || 6));
-    log(`[tick] 队列 ${queued.length} 条，待回复 ${pending.length} 条 → 处理 ${next.id}（${next.kind}，第 ${(next.attempts || 0) + 1} 次${memeAllowed ? '，可带表情' : ''}）`
-      + (mem ? `（记忆 ${mem.total_remembered} 条）` : ''));
-
-    // 每轮只允许发一条：写标记，douyin.mjs send 读它并在发过一条后拒绝第二条。
-    beginWakeMarker(next);
-    const r = await wakeAgent(buildTaskPrompt({
-      item: next, ownerNick, pendingCount: pending.length, mem,
-      root: ROOT, home: DSH_HOME,
-      persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle },
-      memeAllowed,
-    }), 'watch');
-    const marker = readWakeMarker();
-    endWakeMarker();
-
-    if (r.ok) {
-      // ⚠️ agent 跑完 ≠ 私信发出去了。它会写日记、会报告「登录态过期」，
-      //    这些都算 r.ok。必须回读一次私信，确认「我发的」真的多了一条新正文。
-      const after = meBefore === null ? null : checkDm(null, ownerNick);
-      const j = judgeDelivery({ marker, before: dm, after });
-      const { delivered, textDelivered, emojiDelivered, cardDelivered } = j;
-
-      if (delivered) {
-        const newSt = readState();
-        newSt.repliedIds = capRepliedIds([...(newSt.repliedIds ?? []), next.id]);
-        newSt.watches = (newSt.watches ?? 0) + 1;
-        if (marker?.image) newSt.memes = (newSt.memes ?? 0) + 1;
-        writeState(newSt);
-        // 把这一轮读到的会话合并进本地记忆（只存本机，不进仓库/日志）
-        try {
-          if (after?.messages?.length) mergeDmMemory(DSH_HOME, ownerNick, after.messages);
-        } catch (e) { log(`[tick] 记忆写入失败（不影响回复）: ${e.message}`); }
-        const summary = cardDelivered && !textDelivered && !emojiDelivered
-          ? `分享卡片 ${marker.video}，回读确认`
-          : deliverySummary(j);
-        log(`[tick] ${next.id} 已确认送达（${summary}），剩余 ${pending.length - 1} 条`);
-      } else {
-        const attempts = (next.attempts || 0) + 1;
-        const reason = marker?.sent ? 'sent-but-not-readback' : 'no-send';
-        updateState((cur) => ({ ...cur, queue: bumpAttempt(cur.queue, next.id, reason) }));
-        log(`[tick] ⚠️ ${next.id} 未确认到私信（${reason}，第 ${attempts}/${MAX_ATTEMPTS} 次）`
-          + `（回读${j.textAfter === null ? '失败' : '无匹配'}，媒体 ${j.mediaBefore ?? '?'}→${j.mediaAfter ?? '?'}）`
-          + (attempts >= MAX_ATTEMPTS ? '，已标记失败，不再重试' : '，下轮重试'));
-      }
-
-      // 登录失效检测
-      const resp = String(r.response ?? '');
-      if (['请先登录', '登录已失效', '需要登录'].some(p => resp.includes(p))) {
-        const fails = (st.loginFails ?? 0) + 1;
-        writeState({ ...readState(), loginFails: fails });
-        log(`[tick] ⚠️ 登录失效（连续 ${fails} 次）`);
-      }
-    } else {
+    if (result.round === 'dispatch-failed') {
       // 唤醒失败通常是基础设施问题（CLI/登录/网络），不该把内容记成「这条不行」；
       // 不计 attempts，只靠 backoff 控制频率，日志里能看见。
-      log(`[tick] watch 未完成（${r.skipped || r.error || 'unknown'}），下轮重试 ${next.id}`);
+      const r = result.r
+      log(`[tick] watch 未完成（${r.skipped || r.error || 'unknown'}），下轮重试 ${result.next.id}`)
+      return
+    }
+
+    // 登录失效检测（只有唤醒成功的结果才带 response）
+    const resp = String(result.r?.response ?? '')
+    if (['请先登录', '登录已失效', '需要登录'].some(p => resp.includes(p))) {
+      const fails = (st.loginFails ?? 0) + 1
+      writeState({ ...readState(), loginFails: fails })
+      log(`[tick] ⚠️ 登录失效（连续 ${fails} 次）`)
     }
   } finally { checking = false }
 }
@@ -507,8 +360,8 @@ if (has('--help') || has('-h')) {
   const cfg = readConfig()
   const ownerNick = cfg.owner?.nickname ?? ''
   if (!ownerNick) { console.error('config owner.nickname 未配置'); process.exit(1) }
-  const dm = checkDm(null, ownerNick)
-  if (!dm) { console.log('读私信失败'); process.exit(1) }
+  const dm = readDm({ ownerNick, py: defaultPy(), root: ROOT, dataDir: path.join(ROOT, 'data'), log })
+  if (!dm || dm.__error) { console.log('读私信失败'); process.exit(1) }
   const r = mergeDmMemory(DSH_HOME, ownerNick, dm.messages || [])
   console.log(JSON.stringify({ ok: true, added: r?.added ?? 0, total: r?.total ?? 0 }, null, 2))
   process.exit(0)
@@ -517,8 +370,8 @@ if (has('--help') || has('-h')) {
   const cfg = readConfig()
   const ownerNick = cfg.owner?.nickname ?? ''
   if (!ownerNick) { console.error('config owner.nickname 未配置'); process.exit(1) }
-  const dm = checkDm(null, ownerNick)
-  if (!dm) { console.log('读私信失败'); process.exit(1) }
+  const dm = readDm({ ownerNick, py: defaultPy(), root: ROOT, dataDir: path.join(ROOT, 'data'), log })
+  if (!dm || dm.__error) { console.log('读私信失败'); process.exit(1) }
   const st = readState()
   const all = Array.isArray(dm.messages)
     ? dm.messages.filter(m => m && typeof m === 'object' && m.from !== 'me')

@@ -15,7 +15,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 
 import {
-  MAX_ATTEMPTS, bumpAttempt, mergeQueue, pendingOf, readState, textId, writeState,
+  MAX_ATTEMPTS, bumpAttempt, mergeQueue, pendingOf, readState, textId, updateState, writeState,
 } from './state.mjs';
 import {
   beginReplyMarker, endReplyMarker, markerPath, markReplySent, readReplyMarker,
@@ -204,6 +204,26 @@ try {
     assert.match(withMeme, /表情包/);
     assert.match(withMeme, /--image/);
     ok('⑩ sticker 提示词 + memeAllowed 开关');
+  }
+
+  // ⑪ shares 计数：调度器写状态必须透传（否则会把插件累计的分享数抹掉）
+  {
+    writeState(stateFile, {
+      date: today, watches: 1, memes: 0, shares: 2,
+      repliedIds: [], queue: [], loginFails: 0, loginBlockedUntil: '',
+    });
+    let st = readState(stateFile);
+    assert.equal(st.shares, 2, '当天透传');
+    st = updateState(stateFile, (cur) => ({ ...cur, shares: (cur.shares ?? 0) + 1 }));
+    assert.equal(st.shares, 3);
+    // 跨天清零
+    writeState(stateFile, {
+      date: '2020-01-01', watches: 1, memes: 1, shares: 7,
+      repliedIds: [], queue: [], loginFails: 0, loginBlockedUntil: '',
+    });
+    st = readState(stateFile);
+    assert.equal(st.shares, 0, '跨天清零');
+    ok('⑪ shares 计数透传 + 跨天清零');
   }
 
   console.log(`\nALL PASSED (${pass})`);

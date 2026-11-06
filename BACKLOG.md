@@ -37,7 +37,7 @@
 |---|---|
 | D1 共享回读判定（`lib/whale_readback.js`） | ✅ **11-04 v1.9.2**：文字/表情/卡片统一 `judgeDelivery`，两侧 tick 接入 + 7 项单测 |
 | D2 共享任务提示词（`lib/whale_prompt.js`） | ✅ **11-04 v1.9.2**：`tools` / `shell` 两模式，旧文案逐字对比仅 video 一处措辞统一 + 6 项单测 |
-| D3 回合主循环合并（brain 适配器） | ⏳ 待做：把「队列合并 → 挑最早 → 下载贴图 → 建提示词 → 写标记 → 投递 → 等空闲 → 回读 → 推进状态」抽成共享引擎，brain 只负责 dispatch/awaitIdle |
+| D3 回合主循环合并（brain 适配器） | ✅ **11-06 v1.9.3**：`runWatchRound` 引擎（lib/whale_round.js）+ 共享 readDm（lib/dm_reader.js）；修复调度器抹掉 shares 的 bug；fiber 不可读统一投递前 bail。**D1-D3 收官，两路径只剩 brain 适配器不同** |
 
 | # | 问题 | 状态 |
 |---|---|---|

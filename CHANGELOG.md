@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.9.3 — 2026-11-06
+
+架构合并 D3：两条路径的「一轮 tick」主循环收进共享引擎。
+
+### 变更
+
+- **`lib/whale_round.js`**：`runWatchRound` 引擎——队列合并 → 挑最早 → 下载贴图 →
+  建提示词 → 写标记 → 投递 → 等空闲 → 回读 → 推进状态，一条龙共享。
+  调度器和值班大脑只剩前置检查 + brain 适配器（shell 唤醒 / 宿主会话）+ 各自的
+  失败/空转文案。同文件带 `inWatchWindow`（时钟可注入、空窗口=全天、NaN 防御）、
+  `collectIncoming`、`memeAllowedFor`。
+- **`lib/dm_reader.js`**：两份 checkDm 合一（stdout 空读 `DOUYIN_IM_OUT_FILE`
+  回退文件 + 本轮重试 + `{__error}` 结构化错误）。
+- **修复：调度器写状态不再抹掉 `shares`**——`scheduler/state.mjs` 的 readState
+  此前不含该字段，两种模式并存时插件累计的分享计数会被清零；现在透传 + 跨天清零。
+- 统一三处行为：① fiber 读不到时**两条路径都在投递前 bail**（调度器以前先唤醒
+  agent 再跳过回读，白烧一轮 token）；② 调度器「未确认到私信」日志升级为详细
+  判据格式（marker/expected/fresh/媒体）；③ 窗口空数组语义统一为「全天开放」。
+
+### 验证
+
+- 新增 `lib/whale_round.test.mjs` 8 项（文字/表情/卡片送达、派活失败不记
+  attempts、fiber 不可读不投递、空队列 onEmpty、daily-max、未确认 bumpAttempt）；
+  `scheduler/state.test.mjs` 补 shares 透传/跨天清零断言。
+- 旧 tick 测试 12 项全数保留并通过（日志锚点未动）。
+- 真机：`--dry-tick` / `--watch-now` 走新链路正常；重启后引擎空转路径确认。
+- `npm test`：Python 32 + JS 94 全绿。
+
 ## 1.9.2 — 2026-11-04
 
 架构合并第一步：两条运行路径共用「回读判定」和「任务提示词」。
