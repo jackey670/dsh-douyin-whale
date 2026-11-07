@@ -241,7 +241,8 @@ llm-pi-ai:
 值班环境的已知限制：宿主后台会话没有 shell/文件工具（审批类工具不下发），
 所以值班模式的动作用工具完成——发私信 `douyin_dm_send`、挑表情 `douyin_meme_pick`、
 看主人发的图 `douyin_sticker_look`（图片作为工具结果进模型对话）、分享视频 `douyin_dm_share`、
-发抖音原生表情 `douyin_emoji_list` + `douyin_emoji_send`。日记写不了（无文件工具）；
+发抖音原生表情 `douyin_emoji_list` + `douyin_emoji_send`、写两本日记
+`douyin_diary_read` + `douyin_diary_write`（路径固定在 DSH home，不接受外部路径）。
 视频先用 `douyin_frames` 抽帧看画面再回复。
 
 生命周期照抄 dsh-douyin-scroll 值班鱼的三步链：`agents.get(sid)` 找 live →
@@ -685,7 +686,7 @@ dsh-douyin-whale/
 ├── douyin.mjs                   # 独立命令行（自动拉起本地 HTTP API）
 ├── lib/
 │   ├── backend.js               # 子进程 / 限频 / 配额 / 脱敏 / 浏览器发现
-│   ├── tools.js                 # 18 个工具定义
+│   ├── tools.js                 # 20 个工具定义
 │   ├── douyin_http_client.mjs   # Node 侧的 HTTP 客户端
 │   ├── whale_state.js           # 调度器状态的只读视图（~/.dsh/*）+ 原子写
 │   ├── panel_api.js             # /api/douyin-whale/* 路由实现
@@ -694,6 +695,7 @@ dsh-douyin-whale/
 │   ├── whale_round.js           # 共享回合引擎（调度器/值班共用主循环 + 时段判定）
 │   ├── whale_readback.js        # 两条路径共用的送达判定（文字/表情/卡片）
 │   ├── whale_prompt.js          # 两条路径共用的任务提示词（tools / shell 两模式）
+│   ├── diary.js                 # 两本日记（公开反应/私人校准）的读写
 │   ├── dm_reader.js             # 共享的「读一次私信」（文件回退 + 本轮重试）
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
