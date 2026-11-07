@@ -204,6 +204,7 @@ node scheduler/scheduler.mjs --watch-now
 （默认 0.08）刷一条主人可能感兴趣的视频，原生卡片、不带文案；
 `maxPerDay`（默认 3）防刷屏，`minIntervalMinutes`（默认 120）是两次尝试的
 最小间隔——空队列的唤醒很烧 token，靠概率 + 上限 + 间隔三道闸压住。
+这三项和互动频率（检查间隔/每日上限）都可以在面板「运行参数」里直接调。
 
 ### 值班大脑（发布版，不依赖 ZCode）
 

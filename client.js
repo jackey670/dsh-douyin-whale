@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 16;
+    const PANEL_BUILD = 17;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -59,6 +59,9 @@ window.__ModuleLoader__.load({
   border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.14));
   background:var(--dsw-alias-bg-overlay,rgba(128,128,128,.12));color:inherit;font-family:inherit;}
 [data-dy2-form]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px;}
+[data-dy2-grouphead]{padding-top:2px;}
+[data-dy2-grouplabel]{font-size:12px;font-weight:600;line-height:18px;
+  color:var(--dsw-alias-label-secondary,#b9bfc7);border-left:2px solid #3b82f6;padding-left:8px;}
 [data-dy2-field]{display:flex;flex-direction:column;gap:6px;min-width:0;}
 [data-dy2-field][data-wide]{grid-column:1/-1;}
 [data-dy2-label]{font-size:12px;font-weight:500;line-height:18px;color:var(--dsw-alias-label-secondary,#b9bfc7);}
@@ -153,6 +156,10 @@ window.__ModuleLoader__.load({
       const [winEnd, setWinEnd] = useState('24:00');
       const [memePct, setMemePct] = useState(30);
       const [memeMax, setMemeMax] = useState(6);
+      const [shareEnabled, setShareEnabled] = useState(true);
+      const [sharePct, setSharePct] = useState(8);
+      const [shareMax, setShareMax] = useState(3);
+      const [shareMin, setShareMin] = useState(120);
 
       const load = useCallback(async () => {
         setBusy('load');
@@ -171,6 +178,10 @@ window.__ModuleLoader__.load({
           setWinEnd(w.end ?? '24:00');
           setMemePct(Math.round((s.meme?.probability ?? 0.3) * 100));
           setMemeMax(s.meme?.maxPerDay ?? 6);
+          setShareEnabled(s.proactiveShare?.enabled !== false);
+          setSharePct(Math.round((s.proactiveShare?.probability ?? 0.08) * 100));
+          setShareMax(s.proactiveShare?.maxPerDay ?? 3);
+          setShareMin(s.proactiveShare?.minIntervalMinutes ?? 120);
           setMsg('');
         } catch (e) {
           setMsg(String(e?.message ?? e));
@@ -227,6 +238,12 @@ window.__ModuleLoader__.load({
               windows: [{ start: winStart, end: winEnd }],
             },
             meme: { probability: memePct / 100, maxPerDay: memeMax },
+            proactiveShare: {
+              enabled: shareEnabled,
+              probability: sharePct / 100,
+              maxPerDay: shareMax,
+              minIntervalMinutes: shareMin,
+            },
           });
           if (j.ok) setMsg('配置已保存（下个 tick 生效）');
           else setMsg(j.error || '保存失败');
@@ -235,7 +252,8 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy('');
         }
-      }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax]);
+      }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax,
+        shareEnabled, sharePct, shareMax, shareMin]);
 
       const schedulerAct = useCallback(async (action) => {
         setBusy(action);
@@ -274,7 +292,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.11.2·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.12.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -345,6 +363,8 @@ window.__ModuleLoader__.load({
                   placeholder: '例如：漱月鸣筝',
                 })),
               h('div', { 'data-dy2-hint': '' }, '必须和抖音上的昵称完全一致；回复会发给这个人。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
+              h('div', { 'data-dy2-grouplabel': '' }, '互动频率 —— 回复主人多勤快')),
             h('div', { 'data-dy2-field': '' },
               h('div', { 'data-dy2-label': '' }, '检查间隔'),
               h('div', { 'data-dy2-control': '' },
@@ -376,6 +396,18 @@ window.__ModuleLoader__.load({
                   onChange: (e) => setWinEnd(e.target.value),
                 })),
               h('div', { 'data-dy2-hint': '' }, 'HH:MM；只在此时段内检查，结束填 24:00 表示全天。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: enabled,
+                  onChange: (e) => setEnabled(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '自动观看'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '关闭后不检查私信、不消耗 token，只保留面板和工具。')))),
+            h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
+              h('div', { 'data-dy2-grouplabel': '' }, '表情包回复 —— 回敬贴图的强度')),
             h('div', { 'data-dy2-field': '' },
               h('div', { 'data-dy2-label': '' }, '表情包概率'),
               h('div', { 'data-dy2-control': '' },
@@ -394,16 +426,45 @@ window.__ModuleLoader__.load({
                 }),
                 h('span', { 'data-dy2-unit': '' }, '张 / 天')),
               h('div', { 'data-dy2-hint': '' }, '0–30；防刷屏，收表情包回敬不受此限。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
+              h('div', { 'data-dy2-grouplabel': '' }, '主动分享 —— 没有私信时刷视频给主人的强度')),
             h('div', { 'data-dy2-field': '', 'data-wide': '' },
               h('label', { 'data-dy2-switch': '' },
                 h('input', {
-                  type: 'checkbox', checked: enabled,
-                  onChange: (e) => setEnabled(e.target.checked),
+                  type: 'checkbox', checked: shareEnabled,
+                  onChange: (e) => setShareEnabled(e.target.checked),
                 }),
                 h('div', null,
-                  h('div', { 'data-dy2-label': '' }, '自动观看'),
+                  h('div', { 'data-dy2-label': '' }, '开启主动分享'),
                   h('div', { 'data-dy2-hint': '' },
-                    '关闭后不检查私信、不消耗 token，只保留面板和工具。'))))),
+                    '关闭后只在主人发内容时回复，不主动刷视频、不消耗 token。')))),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '分享概率'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 0, max: 100,
+                  value: sharePct, onChange: (e) => setSharePct(Number(e.target.value) || 0),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '%')),
+              h('div', { 'data-dy2-hint': '' }, '0–100；每次空闲按此概率刷一条，0 = 不刷。')),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '分享每日上限'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 0, max: 20,
+                  value: shareMax, onChange: (e) => setShareMax(Number(e.target.value) || 0),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '条 / 天')),
+              h('div', { 'data-dy2-hint': '' }, '0–20；防刷屏，一张原生卡片算一条。')),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '分享最小间隔'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 5, max: 1440,
+                  value: shareMin, onChange: (e) => setShareMin(Number(e.target.value) || 120),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '分钟')),
+              h('div', { 'data-dy2-hint': '' }, '5–1440；两次尝试至少隔这么久，压住 token 消耗。'))),
           h('div', { 'data-dy2-actions': '' },
             h('button', {
               'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
