@@ -153,7 +153,7 @@ export function apply(ctx, config = {}) {
           const dutyAgent = createDutyAgent({
             ctx: agentCtx,
             log: dutyLog,
-            sessionId: 'douyin-whale-duty-v1',
+            sessionId: 'douyin-whale-duty-v2',
             cwd: resolved.dataDir || join(ROOT, 'data'),
             // 值班会话模型路由：配置了 duty.provider/duty.model 就用它们
             // （pi-ai 自定义网关），否则跟随宿主默认。
@@ -178,7 +178,7 @@ export function apply(ctx, config = {}) {
                 return { ok: false, error: '值班会话创建超时（20s）——看插件日志确认 agents.create 卡在哪' };
               }
               return handle
-                ? { ok: true, sessionId: 'douyin-whale-duty-v1', note: '值班会话已就绪' }
+                ? { ok: true, sessionId: 'douyin-whale-duty-v2', note: '值班会话已就绪' }
                 : { ok: false, error: '值班会话没拉起来（宿主 agents 不可用或 create 失败，详见插件日志）' };
             } catch (e) {
               return { ok: false, error: String(e?.message ?? e) };

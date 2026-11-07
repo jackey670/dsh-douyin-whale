@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.11.1 — 2026-11-07
+
+值班会话升级到 v2：新能力配新会话，不被旧对话历史锚住。
+
+### 变更
+
+- 值班会话 id `douyin-whale-duty-v1` → `douyin-whale-duty-v2`。
+  v1 的持久化历史里全是旧流程（「日记写不了跳过」、无 frames/emoji）——
+  真机回归发现恢复会话 16 秒零工具调用直接 text 收尾（no-send）；
+  v2 新会话首轮即完整走 sticker_look → meme_pick → dm_send（31s 真发）
+  并回读确认（0.2.2-rc.1 宿主，23 字）。
+
+### 兼容
+
+- v1 会话文件留在宿主 sessions 目录里不删（不碍事）；要回 v1 改回
+  `lib/duty_agent.js` 的默认 sessionId 即可。
+
 ## 1.11.0 — 2026-11-07
 
 主动分享轮移植到调度器路径：两条路径现在都有「空闲时刷视频」。
