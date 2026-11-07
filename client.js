@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 15;
+    const PANEL_BUILD = 16;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -58,7 +58,7 @@ window.__ModuleLoader__.load({
 [data-dy2-input]{width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;font-size:12px;
   border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.14));
   background:var(--dsw-alias-bg-overlay,rgba(128,128,128,.12));color:inherit;font-family:inherit;}
-[data-dy2-form]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;}
+[data-dy2-form]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px;}
 [data-dy2-field]{display:flex;flex-direction:column;gap:6px;min-width:0;}
 [data-dy2-field][data-wide]{grid-column:1/-1;}
 [data-dy2-label]{font-size:12px;font-weight:500;line-height:18px;color:var(--dsw-alias-label-secondary,#b9bfc7);}
@@ -75,20 +75,31 @@ window.__ModuleLoader__.load({
 [data-dy2-stats]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 16px;}
 [data-dy2-stat]{display:flex;flex-direction:column;gap:2px;min-width:0;}
 [data-dy2-stat] [data-dy2-k]{min-width:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9aa0a6);}
-[data-dy2-v]{font-size:12px;line-height:18px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+[data-dy2-v]{font-size:14px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 [data-dy2-nav] > svg{display:none !important;}
 [data-dy2-nav]::before{content:'🐳';width:16px;font-size:14px;line-height:16px;text-align:center;flex:none;}
 @media (max-width:560px){[data-dy2-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}}
-[data-dy2-badge]{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+[data-dy2-badge]{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;
   border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.16));}
-[data-dy2-badge][data-ok]{color:#22c55e;border-color:rgba(34,197,94,.5);}
-[data-dy2-badge][data-warn]{color:#f59e0b;border-color:rgba(245,158,11,.5);}
-[data-dy2-badge][data-err]{color:#ef4444;border-color:rgba(239,68,68,.5);}
+[data-dy2-badge]::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none;}
+[data-dy2-badge="data-ok"]{color:#4ade80;background:rgba(34,197,94,.13);border-color:rgba(34,197,94,.4);}
+[data-dy2-badge="data-warn"]{color:#fbbf24;background:rgba(245,158,11,.13);border-color:rgba(245,158,11,.4);}
+[data-dy2-badge="data-err"]{color:#f87171;background:rgba(239,68,68,.13);border-color:rgba(239,68,68,.4);}
 [data-dy2-log]{max-height:240px;overflow:auto;font-family:ui-monospace,Consolas,monospace;
   font-size:11px;line-height:16px;padding:8px;border-radius:8px;
   background:var(--dsw-alias-bg-overlay,rgba(0,0,0,.18));white-space:pre-wrap;word-break:break-all;}
 [data-dy2-item]{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:8px;
   border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.08));}
+[data-dy2-item="pending"]{border-left:3px solid #3b82f6;background:rgba(59,130,246,.07);}
+[data-dy2-item="failed"]{border-left:3px solid #ef4444;background:rgba(239,68,68,.06);}
+[data-dy2-item="done"]{opacity:.55;}
+[data-dy2-alert]{padding:10px 12px;border-radius:8px;font-size:12px;line-height:18px;
+  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#fca5a5;}
+[data-dy2-seg]{display:inline-flex;padding:3px;border-radius:8px;gap:2px;
+  background:var(--dsw-alias-bg-overlay,rgba(128,128,128,.14));}
+[data-dy2-seg] button{border:none;background:transparent;padding:5px 12px;border-radius:6px;
+  font-size:12px;color:var(--dsw-alias-label-secondary,#b9bfc7);cursor:pointer;font-family:inherit;}
+[data-dy2-seg] button[aria-pressed="true"]{background:rgba(255,255,255,.14);color:inherit;font-weight:600;}
 [data-dy2-empty]{font-size:12px;color:var(--dsw-alias-label-tertiary,#9aa0a6);padding:6px 2px;}
 `;
 
@@ -263,7 +274,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.11.1·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.11.2·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -406,7 +417,10 @@ window.__ModuleLoader__.load({
           !(queue.items ?? []).length
             ? h('div', { 'data-dy2-empty': '' }, '队列为空 —— 主人发视频或文字之后这里会出现')
             : h('div', { 'data-dy2-inner': '' },
-              ...queue.items.slice().reverse().map((it) => h('div', { 'data-dy2-item': '', key: it.id || it.item_id },
+              ...queue.items.slice().reverse().map((it) => h('div', {
+                'data-dy2-item': it.status === 'replied' ? 'done'
+                  : it.status === 'failed' ? 'failed' : 'pending',
+                key: it.id || it.item_id },
                 h('span', {
                   'data-dy2-badge': it.status === 'replied' ? 'data-ok'
                     : it.status === 'failed' ? 'data-err' : 'data-warn',
@@ -459,7 +473,7 @@ window.__ModuleLoader__.load({
                 '用手机抖音「扫一扫」扫这张图；原图：' + login.qr))
             : null,
           login?.captcha
-            ? h('div', { 'data-dy2-badge': 'data-err' },
+            ? h('div', { 'data-dy2-alert': '' },
               '抖音要求滑块/拼图验证 —— 无头模式无法完成。请在有头窗口运行 '
               + 'python tools/export_login_state.py，人工通过后点「刷新状态」')
             : null,
@@ -475,18 +489,17 @@ window.__ModuleLoader__.load({
                 ? '插件值班日志（data/logs）'
                 : '~/.dsh/douyin-whale-scheduler.log')),
           h('div', { 'data-dy2-row': '' },
-            h('button', {
-              'data-dy2-btn': '',
-              ...(logSource === 'plugin' ? { 'data-primary': '' } : {}),
-              disabled: Boolean(busy),
-              onClick: () => { setLogSource('plugin'); loadLog('plugin'); },
-            }, '值班日志'),
-            h('button', {
-              'data-dy2-btn': '',
-              ...(logSource === 'scheduler' ? { 'data-primary': '' } : {}),
-              disabled: Boolean(busy),
-              onClick: () => { setLogSource('scheduler'); loadLog('scheduler'); },
-            }, '调度器日志'),
+            h('div', { 'data-dy2-seg': '' },
+              h('button', {
+                'aria-pressed': logSource === 'plugin' ? 'true' : 'false',
+                disabled: Boolean(busy),
+                onClick: () => { setLogSource('plugin'); loadLog('plugin'); },
+              }, '值班日志'),
+              h('button', {
+                'aria-pressed': logSource === 'scheduler' ? 'true' : 'false',
+                disabled: Boolean(busy),
+                onClick: () => { setLogSource('scheduler'); loadLog('scheduler'); },
+              }, '调度器日志')),
             h('button', {
               'data-dy2-btn': '', disabled: Boolean(busy),
               onClick: () => loadLog(),
@@ -494,7 +507,7 @@ window.__ModuleLoader__.load({
           logLines !== null
             ? h('div', { 'data-dy2-log': '' },
               logLines.length ? logLines.join('\n') : '（日志是空的）')
-            : null),
+            : h('div', { 'data-dy2-empty': '' }, '点「读取」加载最近的运行日志；日志只在本机，不进仓库。')),
 
         msg
           ? h('div', { 'data-dy2-sub': '', 'data-dy2-row': '' }, msg)
