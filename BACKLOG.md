@@ -1,9 +1,7 @@
 # 待修问题（2026-10-27 主人反馈）
 
 > **2026-11-06 收工存档**
-> 1. **GitHub 推送挂起**：v1.9.3（`eaede80` + tag）只在 GitCode；今晚 github.com
->    直连/代理全断。网络恢复后跑 `git push origin main refs/tags/v1.9.3`，
->    再 `gh release create v1.9.3 --title "v1.9.3 — 回合主循环合并（架构合并收官）" --notes-file RELEASE-1.9.3.md`。
+> 1. ~~GitHub 推送挂起~~ **11-07 已补**：main `5c033cd` + tag v1.9.3 + Release 全推齐。
 > 2. **架构合并 D1-D3 收官**（v1.9.2 / v1.9.3）：调度器与值班大脑共用回读判定、
 >    任务提示词、回合主循环和读私信，只剩 brain 适配器不同（见下表）。
 > 3. 开机恢复：`cscript //nologo start-whale.vbs`（隐藏窗口）；wb2api 双击启动。
