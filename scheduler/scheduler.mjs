@@ -19,8 +19,10 @@ import path from 'node:path'
 import { spawn, execSync, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dmContext, mergeDmMemory } from './memory.mjs'
-import { buildTaskPrompt } from './prompt.mjs'
-import { runWatchRound, inWatchWindow } from '../lib/whale_round.js'
+import { buildTaskPrompt, buildSharePrompt } from './prompt.mjs'
+import { beginReplyMarker, endReplyMarker, readReplyMarker } from '../lib/reply_marker.js'
+import { judgeDelivery } from '../lib/whale_readback.js'
+import { runWatchRound, inWatchWindow, shouldProactiveShare } from '../lib/whale_round.js'
 import { readDm } from '../lib/dm_reader.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
@@ -217,10 +219,11 @@ async function tick({ manual = false } = {}) {
       log, home: DSH_HOME, mem, root: ROOT,
       mergeMemory: (after) => mergeDmMemory(DSH_HOME, ownerNick, after.messages),
       onEmpty: async ({ merged, manual: isManual }) => {
-        // 没有待回复的内容 → 跳过（零 token）
+        // 没有待回复的内容 → 低概率刷一条主动分享（有限流闸，不会烧穿 token）
         if (isManual) {
           log(`[tick] 没有待回复的内容（队列 ${merged.queue.length} 条，已回复 ${(merged.repliedIds ?? []).length} 条）`)
         }
+        await maybeShareShell({ cfg, merged, manual: isManual, ownerNick, log })
       },
     })
 
@@ -240,6 +243,53 @@ async function tick({ manual = false } = {}) {
       log(`[tick] ⚠️ 登录失效（连续 ${fails} 次）`)
     }
   } finally { checking = false }
+}
+
+/** 主动分享轮（shell 版）：队列空闲时按概率刷一条视频卡片给主人。
+ *  与 duty 版同一套闸门（lib/whale_round.js 的 shouldProactiveShare），多一道
+ *  最小间隔闸（proactiveShare.minIntervalMinutes，默认 120 分钟）+ lastShareAt
+ *  落盘——不让空队列的唤醒把 token 烧穿。没发出去不计数，下轮重摇。 */
+async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
+  const pc = cfg.proactiveShare ?? {}
+  const gate = shouldProactiveShare({
+    pc, merged, manual,
+    lastShareAt: readState().lastShareAt || '',
+    minIntervalMinutes: pc.minIntervalMinutes,
+  })
+  if (!gate.ok) {
+    if (gate.reason === 'daily-max') {
+      log(`[tick] 今日已分享 ${merged.shares ?? 0} 条，达到上限，明天再刷`)
+    }
+    return
+  }
+  try {
+    beginReplyMarker(DSH_HOME, { id: `share-${Date.now()}`, kind: 'video' })
+    const mem = dmContext(DSH_HOME, ownerNick)
+    const r = await wakeAgent(buildSharePrompt({ ownerNick, mem, cfg, root: ROOT }), 'share')
+    // 无论成败都记时间戳：这次机会用掉了，限流闸才算数
+    updateState((c) => ({ ...c, lastShareAt: new Date().toISOString() }))
+    const marker = readReplyMarker(DSH_HOME)
+    endReplyMarker(DSH_HOME)
+    if (!r.ok) {
+      log(`[tick] 主动分享唤醒失败（${r.skipped || r.error || 'unknown'}），下轮重摇`)
+      return
+    }
+    if (!marker?.sent) {
+      log('[tick] 主动分享：agent 没发（没挑到合适的就宁可不发，正常）')
+      return
+    }
+    const after = readDm({ ownerNick, py: defaultPy(), root: ROOT, dataDir: path.join(ROOT, 'data'), log })
+    const cardSeen = judgeDelivery({ marker, before: null, after }).cardDelivered
+    if (!cardSeen) {
+      log(`[tick] ⚠️ 主动分享卡片未在回读里确认（aweme ${marker.video}）——不计数`)
+      return
+    }
+    const cur = updateState((c) => ({ ...c, shares: (c.shares ?? 0) + 1 }))
+    log(`[tick] 主动分享已确认（aweme ${marker.video}），今日第 ${cur.shares ?? 1} 条`)
+  } catch (e) {
+    try { endReplyMarker(DSH_HOME) } catch { /* 已清理也算成功 */ }
+    log(`[tick] 主动分享异常: ${e?.message ?? e}`)
+  }
 }
 
 function status() {

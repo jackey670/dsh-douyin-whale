@@ -19,5 +19,16 @@
   "share": {
     "enabled": true,
     "dailyMax": 10
+  },
+  "meme": {
+    "enabled": true,
+    "probability": 0.3,
+    "maxPerDay": 6
+  },
+  "proactiveShare": {
+    "enabled": true,
+    "probability": 0.08,
+    "maxPerDay": 3,
+    "minIntervalMinutes": 120
   }
 }

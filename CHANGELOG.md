@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.11.0 — 2026-11-07
+
+主动分享轮移植到调度器路径：两条路径现在都有「空闲时刷视频」。
+
+### 新增
+
+- **调度器主动分享 `maybeShareShell`**：队列空闲时按
+  `proactiveShare.probability`（默认 0.08）唤醒 agent 刷热榜/搜索，
+  用 `share --send` 发原生卡片；回读按「我发的卡片 item_id」确认才计数。
+- **`lib/whale_round.js` 新增 `shouldProactiveShare`**：五道闸统一成纯函数——
+  开关 → 手动跳过 → 概率 → 每日上限 → **最小间隔**
+  （`proactiveShare.minIntervalMinutes`，默认 120 分钟）。调度器版每次尝试
+  （无论成败）都落 `lastShareAt`，空队列的唤醒烧不穿 token。
+- **`lib/whale_prompt.js` 新增 `buildProactiveShareMessage({ mode })`**：
+  tools = douyin_hot/search + douyin_dm_share；shell = trending/search + share 命令
+  （无文案、不写日记）。`scheduler/prompt.mjs` 出 `buildSharePrompt` 薄封装，
+  值班版从 whale_tick 再导出。
+- `scheduler/state.mjs` 透传 `lastShareAt`（跨天保留——它只是时间戳）；
+  `config.example.json` 补 `meme` / `proactiveShare` 两节。
+
+### 变更
+
+- 值班路径的分享轮行为不变（没有最小间隔闸，按原概率/上限跑）。
+
+### 验证
+
+- `lib/whale_round.test.mjs` 补闸门五道条件 1 项；`lib/whale_prompt.test.mjs`
+  补两种模式的分享提示词；`scheduler/state.test.mjs` 补 lastShareAt 透传。
+- `npm test`：Python 32 + JS 101 全绿。
+
 ## 1.10.0 — 2026-11-07
 
 值班大脑补日记：两本日记（公开反应 / 私人偏好校准）现在两条路径都能写。

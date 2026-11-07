@@ -5,7 +5,7 @@
  * 用 `node douyin.mjs ...` 执行、Read 看帧图、写两本日记。
  * 值班大脑走同一构造器的 mode='tools'，两边不会再各写一份。
  */
-import { buildWhaleTaskMessage } from '../lib/whale_prompt.js';
+import { buildWhaleTaskMessage, buildProactiveShareMessage } from '../lib/whale_prompt.js';
 
 export function buildTaskPrompt({
   item, ownerNick, pendingCount, mem = null, root, home, persona = {}, memeAllowed = false,
@@ -21,4 +21,9 @@ export function buildTaskPrompt({
     memeAllowed,
     cfg: { persona },
   });
+}
+
+/** 主动分享轮（shell 版）：trending/search → share 原生卡片，不带文案、不写日记 */
+export function buildSharePrompt({ ownerNick, mem = null, cfg = {}, root }) {
+  return buildProactiveShareMessage({ mode: 'shell', ownerNick, mem, cfg, root });
 }

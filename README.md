@@ -194,11 +194,16 @@ node scheduler/scheduler.mjs --watch-now
 
 | 文件 | 内容 |
 |---|---|
-| `douyin-whale.config.json` | 主人昵称、检查间隔、时段、每日上限 |
-| `douyin-whale-state.json` | 内容队列、已回复 id、今日计数 |
+| `douyin-whale.config.json` | 主人昵称、检查间隔、时段、每日上限、主动分享概率 |
+| `douyin-whale-state.json` | 内容队列、已回复 id、今日计数、上次主动分享时间 |
 | `douyin-whale-scheduler.log` | 运行日志 |
 | `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
 | `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
+
+**主动分享轮**（两条路径都有）：队列空闲时按 `proactiveShare.probability`
+（默认 0.08）刷一条主人可能感兴趣的视频，原生卡片、不带文案；
+`maxPerDay`（默认 3）防刷屏，`minIntervalMinutes`（默认 120）是两次尝试的
+最小间隔——空队列的唤醒很烧 token，靠概率 + 上限 + 间隔三道闸压住。
 
 ### 值班大脑（发布版，不依赖 ZCode）
 

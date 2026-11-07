@@ -64,7 +64,7 @@ export function readState(file, now = new Date()) {
     // 跨天：只重置当天计数，保留 repliedIds / queue（shares 也属当天计数，清零）
     return {
       date: today(now), watches: 0, memes: 0, shares: 0, repliedIds, queue,
-      loginFails: 0, loginBlockedUntil: '',
+      loginFails: 0, loginBlockedUntil: '', lastShareAt: raw.lastShareAt || '',
     };
   }
   return {
@@ -78,6 +78,8 @@ export function readState(file, now = new Date()) {
     queue,
     loginFails: Number(raw.loginFails) || 0,
     loginBlockedUntil: typeof raw.loginBlockedUntil === 'string' ? raw.loginBlockedUntil : '',
+    // 主动分享的上次尝试时间（限流闸用，跨天保留——它只是个时间戳）
+    lastShareAt: typeof raw.lastShareAt === 'string' ? raw.lastShareAt : '',
   };
 }
 

@@ -216,6 +216,9 @@ try {
     assert.equal(st.shares, 2, '当天透传');
     st = updateState(stateFile, (cur) => ({ ...cur, shares: (cur.shares ?? 0) + 1 }));
     assert.equal(st.shares, 3);
+    // lastShareAt 是时间戳，跨天也保留（限流闸只看间隔）
+    st = updateState(stateFile, (cur) => ({ ...cur, lastShareAt: '2026-11-07T12:00:00.000Z' }));
+    assert.equal(st.lastShareAt, '2026-11-07T12:00:00.000Z');
     // 跨天清零
     writeState(stateFile, {
       date: '2020-01-01', watches: 1, memes: 1, shares: 7,
