@@ -46,6 +46,14 @@
 | D3 回合主循环合并（brain 适配器） | ✅ **11-06 v1.9.3**：`runWatchRound` 引擎（lib/whale_round.js）+ 共享 readDm（lib/dm_reader.js）；修复调度器抹掉 shares 的 bug；fiber 不可读统一投递前 bail。**D1-D3 收官，两路径只剩 brain 适配器不同** |
 | D4 值班大脑补日记 | ✅ **11-07 v1.10.0**：`douyin_diary_read`/`douyin_diary_write` 工具（lib/diary.js），路径固定 DSH home，与调度器共用同一份日记文件 |
 
+## 状态与人格（E）
+
+| 步骤 | 状态 |
+|---|---|
+| E1 心情/作息（`lib/mood.js`） | ✅ **11-10 v1.13.0**：精力/想念/无聊三轴漂移 + 事件 + 跨午夜作息；面板「现在」卡 + 摸摸头 |
+| E2 可编辑人设（`persona.text`） | ✅ **11-10 v1.13.0**：≤800 字，拼进值班/调度器两条路径的任务提示词 |
+| E3 桌宠联动（`lib/pet_bridge.js`） | ✅ **11-10 v1.13.0**：气泡 + 睡觉/起床；避开与 ZCode hook 共用的 `/work-status` 槽位 |
+
 | # | 问题 | 状态 |
 |---|---|---|
 | 1 | 白框 | ⚠️ 部分修复，等现场日志 |

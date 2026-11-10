@@ -24,6 +24,8 @@ import { beginReplyMarker, endReplyMarker, readReplyMarker } from '../lib/reply_
 import { judgeDelivery } from '../lib/whale_readback.js'
 import { runWatchRound, inWatchWindow, shouldProactiveShare } from '../lib/whale_round.js'
 import { readDm } from '../lib/dm_reader.js'
+import { applyMoodEvent, applyRoundMood, readMood } from '../lib/mood.js'
+import { petNotify, syncPetSleep } from '../lib/pet_bridge.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
   readState as readStateFile, updateState as updateStateFile, writeState as writeStateFile,
@@ -36,6 +38,7 @@ const DSH_HOME = process.env.DSH_HOME || path.join(HOME, '.dsh')
 const CFG_FILE = process.env.DOUYIN_WHALE_CONFIG || path.join(DSH_HOME, 'douyin-whale.config.json')
 const AGENT_DIR = path.join(HERE, 'agent')
 const STATE_FILE = path.join(DSH_HOME, 'douyin-whale-state.json')
+const MOOD_FILE = path.join(DSH_HOME, 'whale-mood.json')
 const LOG_FILE = path.join(DSH_HOME, 'douyin-whale-scheduler.log')
 const PID_FILE = path.join(DSH_HOME, 'douyin-whale-scheduler.pid')
 const DENY_FILE = path.join(HERE, 'tools-deny.txt')
@@ -197,6 +200,9 @@ async function tick({ manual = false } = {}) {
     if (manual) log('[tick] config owner.nickname 未配置')
     return
   }
+  // 心情/作息：先让桌宠跟上（到点睡觉/起床），再决定这轮怎么说话
+  const mood = readMood({ file: MOOD_FILE, cfg })
+  void syncPetSleep({ view: mood, home: DSH_HOME, cfg, log })
 
   checking = true
   try {
@@ -213,10 +219,10 @@ async function tick({ manual = false } = {}) {
       brain: { dispatch: async ({ prompt }) => wakeAgent(prompt, 'watch') },
       buildPrompt: (ctx) => buildTaskPrompt({
         ...ctx, root: ROOT, home: DSH_HOME,
-        persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle },
+        persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle, text: cfg.persona?.text },
       }),
       checkDm: () => readDm({ ownerNick, py, root: ROOT, dataDir: path.join(ROOT, 'data'), log }),
-      log, home: DSH_HOME, mem, root: ROOT,
+      log, home: DSH_HOME, mem, root: ROOT, mood,
       mergeMemory: (after) => mergeDmMemory(DSH_HOME, ownerNick, after.messages),
       onEmpty: async ({ merged, manual: isManual }) => {
         // 没有待回复的内容 → 低概率刷一条主动分享（有限流闸，不会烧穿 token）
@@ -226,6 +232,11 @@ async function tick({ manual = false } = {}) {
         await maybeShareShell({ cfg, merged, manual: isManual, ownerNick, log })
       },
     })
+
+    applyRoundMood({ file: MOOD_FILE, round: result.round, cfg, log })
+    if (result.round === 'delivered') {
+      void petNotify({ text: '回完主人一条啦', home: DSH_HOME, cfg, log })
+    }
 
     if (result.round === 'dispatch-failed') {
       // 唤醒失败通常是基础设施问题（CLI/登录/网络），不该把内容记成「这条不行」；
@@ -251,8 +262,9 @@ async function tick({ manual = false } = {}) {
  *  落盘——不让空队列的唤醒把 token 烧穿。没发出去不计数，下轮重摇。 */
 async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
   const pc = cfg.proactiveShare ?? {}
+  const mood = readMood({ file: MOOD_FILE, cfg })
   const gate = shouldProactiveShare({
-    pc, merged, manual,
+    pc, merged, manual, mood,
     lastShareAt: readState().lastShareAt || '',
     minIntervalMinutes: pc.minIntervalMinutes,
   })
@@ -262,15 +274,21 @@ async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
     }
     return
   }
+  const bumpMood = (event) => {
+    try { applyMoodEvent({ file: MOOD_FILE, event, cfg }) } catch (e) {
+      log(`[mood] 状态写入失败（不影响分享）: ${e?.message ?? e}`)
+    }
+  }
   try {
     beginReplyMarker(DSH_HOME, { id: `share-${Date.now()}`, kind: 'video' })
     const mem = dmContext(DSH_HOME, ownerNick)
-    const r = await wakeAgent(buildSharePrompt({ ownerNick, mem, cfg, root: ROOT }), 'share')
+    const r = await wakeAgent(buildSharePrompt({ ownerNick, mem, cfg, root: ROOT, mood }), 'share')
     // 无论成败都记时间戳：这次机会用掉了，限流闸才算数
     updateState((c) => ({ ...c, lastShareAt: new Date().toISOString() }))
     const marker = readReplyMarker(DSH_HOME)
     endReplyMarker(DSH_HOME)
     if (!r.ok) {
+      bumpMood('share_failed')
       log(`[tick] 主动分享唤醒失败（${r.skipped || r.error || 'unknown'}），下轮重摇`)
       return
     }
@@ -281,10 +299,13 @@ async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
     const after = readDm({ ownerNick, py: defaultPy(), root: ROOT, dataDir: path.join(ROOT, 'data'), log })
     const cardSeen = judgeDelivery({ marker, before: null, after }).cardDelivered
     if (!cardSeen) {
+      bumpMood('share_failed')
       log(`[tick] ⚠️ 主动分享卡片未在回读里确认（aweme ${marker.video}）——不计数`)
       return
     }
     const cur = updateState((c) => ({ ...c, shares: (c.shares ?? 0) + 1 }))
+    bumpMood('share')
+    void petNotify({ text: '刷到一条好玩的，发给主人了', home: DSH_HOME, cfg, log })
     log(`[tick] 主动分享已确认（aweme ${marker.video}），今日第 ${cur.shares ?? 1} 条`)
   } catch (e) {
     try { endReplyMarker(DSH_HOME) } catch { /* 已清理也算成功 */ }

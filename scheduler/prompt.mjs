@@ -8,7 +8,7 @@
 import { buildWhaleTaskMessage, buildProactiveShareMessage } from '../lib/whale_prompt.js';
 
 export function buildTaskPrompt({
-  item, ownerNick, pendingCount, mem = null, root, home, persona = {}, memeAllowed = false,
+  item, ownerNick, pendingCount, mem = null, root, home, persona = {}, memeAllowed = false, mood = null,
 }) {
   return buildWhaleTaskMessage({
     mode: 'shell',
@@ -19,11 +19,12 @@ export function buildTaskPrompt({
     root,
     home,
     memeAllowed,
+    mood,
     cfg: { persona },
   });
 }
 
 /** 主动分享轮（shell 版）：trending/search → share 原生卡片，不带文案、不写日记 */
-export function buildSharePrompt({ ownerNick, mem = null, cfg = {}, root }) {
-  return buildProactiveShareMessage({ mode: 'shell', ownerNick, mem, cfg, root });
+export function buildSharePrompt({ ownerNick, mem = null, cfg = {}, root, mood = null }) {
+  return buildProactiveShareMessage({ mode: 'shell', ownerNick, mem, cfg, root, mood });
 }

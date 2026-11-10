@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 17;
+    const PANEL_BUILD = 18;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -104,6 +104,15 @@ window.__ModuleLoader__.load({
   font-size:12px;color:var(--dsw-alias-label-secondary,#b9bfc7);cursor:pointer;font-family:inherit;}
 [data-dy2-seg] button[aria-pressed="true"]{background:rgba(255,255,255,.14);color:inherit;font-weight:600;}
 [data-dy2-empty]{font-size:12px;color:var(--dsw-alias-label-tertiary,#9aa0a6);padding:6px 2px;}
+[data-dy2-moodbars]{display:flex;flex-direction:column;gap:7px;}
+[data-dy2-moodrow]{display:flex;align-items:center;gap:10px;font-size:12px;}
+[data-dy2-moodk]{width:36px;flex:none;color:var(--dsw-alias-label-secondary,#b9bfc7);}
+[data-dy2-track]{flex:1;height:8px;border-radius:999px;overflow:hidden;
+  background:var(--dsw-alias-bg-overlay,rgba(128,128,128,.18));}
+[data-dy2-fill]{height:100%;border-radius:999px;transition:width .3s ease;}
+[data-dy2-moodv]{width:30px;flex:none;text-align:right;font-variant-numeric:tabular-nums;
+  color:var(--dsw-alias-label-tertiary,#9aa0a6);}
+[data-dy2-textarea]{min-height:104px;resize:vertical;line-height:1.55;}
 `;
 
     /* ── 错误边界：面板任何一块抛错，都只塌这一页 ─────────────────────── */
@@ -160,6 +169,13 @@ window.__ModuleLoader__.load({
       const [sharePct, setSharePct] = useState(8);
       const [shareMax, setShareMax] = useState(3);
       const [shareMin, setShareMin] = useState(120);
+      const [personaText, setPersonaText] = useState('');
+      const [moodEnabled, setMoodEnabled] = useState(true);
+      const [sleepStart, setSleepStart] = useState('23:30');
+      const [sleepEnd, setSleepEnd] = useState('07:30');
+      const [petEnabled, setPetEnabled] = useState(true);
+      const [petSleep, setPetSleep] = useState(true);
+      const [petMin, setPetMin] = useState(15);
 
       const load = useCallback(async () => {
         setBusy('load');
@@ -182,6 +198,15 @@ window.__ModuleLoader__.load({
           setSharePct(Math.round((s.proactiveShare?.probability ?? 0.08) * 100));
           setShareMax(s.proactiveShare?.maxPerDay ?? 3);
           setShareMin(s.proactiveShare?.minIntervalMinutes ?? 120);
+          const cc = c.config || {};
+          setPersonaText(cc.persona?.text ?? '');
+          setMoodEnabled(cc.mood?.enabled !== false);
+          const mw = (cc.mood?.sleepWindows ?? [])[0] ?? {};
+          setSleepStart(mw.start ?? '23:30');
+          setSleepEnd(mw.end ?? '07:30');
+          setPetEnabled(cc.pet?.enabled !== false);
+          setPetSleep(cc.pet?.sleepEnabled !== false);
+          setPetMin(cc.pet?.minIntervalMinutes ?? 15);
           setMsg('');
         } catch (e) {
           setMsg(String(e?.message ?? e));
@@ -244,6 +269,16 @@ window.__ModuleLoader__.load({
               maxPerDay: shareMax,
               minIntervalMinutes: shareMin,
             },
+            persona: { text: personaText },
+            mood: {
+              enabled: moodEnabled,
+              sleepWindows: [{ start: sleepStart, end: sleepEnd }],
+            },
+            pet: {
+              enabled: petEnabled,
+              sleepEnabled: petSleep,
+              minIntervalMinutes: petMin,
+            },
           });
           if (j.ok) setMsg('配置已保存（下个 tick 生效）');
           else setMsg(j.error || '保存失败');
@@ -253,7 +288,8 @@ window.__ModuleLoader__.load({
           setBusy('');
         }
       }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax,
-        shareEnabled, sharePct, shareMax, shareMin]);
+        shareEnabled, sharePct, shareMax, shareMin, personaText,
+        moodEnabled, sleepStart, sleepEnd, petEnabled, petSleep, petMin]);
 
       const schedulerAct = useCallback(async (action) => {
         setBusy(action);
@@ -280,9 +316,44 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
+      const poke = useCallback(async () => {
+        setBusy('poke');
+        try {
+          const j = await jpost('/mood/poke');
+          if (j.ok) {
+            setData((d) => (d ? { ...d, mood: j.mood } : d));
+            setMsg('摸了一下');
+          } else setMsg(j.error || '摸摸头失败');
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setBusy('');
+        }
+      }, []);
+
+      const refreshMood = useCallback(async () => {
+        try {
+          setData(await jget('/status'));
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        }
+      }, []);
+
       const running = data?.daemon?.running === true;
       const gate = data?.gate ?? {};
       const queue = data?.queue ?? {};
+      const mood = data?.mood ?? null;
+      const moodBar = (label, value, color) => h('div', { 'data-dy2-moodrow': '' },
+        h('span', { 'data-dy2-moodk': '' }, label),
+        h('div', { 'data-dy2-track': '' },
+          h('div', {
+            'data-dy2-fill': '',
+            style: {
+              width: `${Math.max(0, Math.min(100, Number(value) || 0))}%`,
+              background: color,
+            },
+          })),
+        h('span', { 'data-dy2-moodv': '' }, Math.round(Number(value) || 0)));
 
       return h('div', { 'data-dy2-page': '' },
 
@@ -292,7 +363,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.12.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.13.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -348,6 +419,32 @@ window.__ModuleLoader__.load({
               ? h('div', { 'data-dy2-sub': '' },
                 '没找到 ZCode CLI：独立调度器需要本地 ZCode；当前 DSH 插件模式由值班大脑接管，不需要它。')
               : null),
+
+        /* ── 现在 ── */
+        h('div', { 'data-dy2-card': '' },
+          h('div', { 'data-dy2-title': '' },
+            '现在',
+            mood?.enabled === false
+              ? h('span', { 'data-dy2-badge': 'data-warn' }, '心情关闭')
+              : h('span', {
+                'data-dy2-badge': mood?.sleeping ? 'data-warn' : 'data-ok',
+              }, mood?.label || '—'),
+            h('span', { 'data-dy2-sub': '' }, data?.pet?.online ? '桌宠在线' : '桌宠离线')),
+          mood
+            ? h('div', { 'data-dy2-moodbars': '' },
+              moodBar('精力', mood.energy, '#22c55e'),
+              moodBar('想念', mood.social, '#ec4899'),
+              moodBar('无聊', mood.boredom, '#f59e0b'))
+            : h('div', { 'data-dy2-empty': '' }, '还没有状态数据'),
+          h('div', { 'data-dy2-row': '' },
+            h('button', {
+              'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy), onClick: poke,
+            }, '摸摸头'),
+            h('button', {
+              'data-dy2-btn': '', disabled: Boolean(busy), onClick: refreshMood,
+            }, '刷新')),
+          h('div', { 'data-dy2-sub': '' },
+            `上次互动 ${fmtWhen(mood?.lastInteractionAt)} · 状态更新 ${mood?.updatedAt ? fmtWhen(mood.updatedAt) : '—'}`)),
 
         /* ── 运行参数 ── */
         h('div', { 'data-dy2-card': '' },
@@ -464,12 +561,86 @@ window.__ModuleLoader__.load({
                   value: shareMin, onChange: (e) => setShareMin(Number(e.target.value) || 120),
                 }),
                 h('span', { 'data-dy2-unit': '' }, '分钟')),
-              h('div', { 'data-dy2-hint': '' }, '5–1440；两次尝试至少隔这么久，压住 token 消耗。'))),
+              h('div', { 'data-dy2-hint': '' }, '5–1440；两次尝试至少隔这么久，压住 token 消耗。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
+              h('div', { 'data-dy2-grouplabel': '' }, '状态与桌宠 —— 心情、作息、桌面反馈')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: moodEnabled,
+                  onChange: (e) => setMoodEnabled(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '心情系统'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '开启后语气、主动分享节奏和作息都跟着状态走；关闭只停行为，不改历史值。')))),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('div', { 'data-dy2-label': '' }, '睡觉时段'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', value: sleepStart,
+                  onChange: (e) => setSleepStart(e.target.value),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '—'),
+                h('input', {
+                  'data-dy2-input': '', value: sleepEnd,
+                  onChange: (e) => setSleepEnd(e.target.value),
+                })),
+              h('div', { 'data-dy2-hint': '' },
+                'HH:MM；跨午夜就填 23:30 — 07:30。这期间精力恢复、不主动分享，主人来消息照回。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: petEnabled,
+                  onChange: (e) => setPetEnabled(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '桌宠播报'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '回完私信/分享视频时在桌面上冒个短气泡；桌宠没开就自动跳过。')))),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: petSleep,
+                  onChange: (e) => setPetSleep(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '自动睡觉'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '到睡觉时段让桌宠睡、早上叫醒；关闭只是不联动桌宠。')))),
+            h('div', { 'data-dy2-field': '' },
+              h('div', { 'data-dy2-label': '' }, '播报最小间隔'),
+              h('div', { 'data-dy2-control': '' },
+                h('input', {
+                  'data-dy2-input': '', type: 'number', min: 5, max: 1440,
+                  value: petMin, onChange: (e) => setPetMin(Number(e.target.value) || 15),
+                }),
+                h('span', { 'data-dy2-unit': '' }, '分钟')),
+              h('div', { 'data-dy2-hint': '' }, '5–1440；普通气泡至少隔这么久，摸摸头不受限。'))),
           h('div', { 'data-dy2-actions': '' },
             h('button', {
               'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
               onClick: saveConfig,
             }, '保存设置'))),
+
+        /* ── 人设 ── */
+        h('div', { 'data-dy2-card': '' },
+          h('div', { 'data-dy2-title': '' }, '人设',
+            h('span', { 'data-dy2-sub': '' }, '拼进每轮任务提示词，改完下一轮生效')),
+          h('textarea', {
+            'data-dy2-input': '', 'data-dy2-textarea': '',
+            maxLength: 800,
+            value: personaText,
+            onChange: (e) => setPersonaText(e.target.value),
+            placeholder: '性格、喜欢/不喜欢、说话习惯……',
+          }),
+          h('div', { 'data-dy2-hint': '' },
+            `${personaText.length}/800 字；留空就只用内置提示词。`),
+          h('div', { 'data-dy2-actions': '' },
+            h('button', {
+              'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
+              onClick: saveConfig,
+            }, '保存人设'))),
 
         /* ── 队列 ── */
         h('div', { 'data-dy2-card': '' },

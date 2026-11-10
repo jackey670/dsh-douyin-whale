@@ -196,6 +196,8 @@ node scheduler/scheduler.mjs --watch-now
 |---|---|
 | `douyin-whale.config.json` | 主人昵称、检查间隔、时段、每日上限、主动分享概率 |
 | `douyin-whale-state.json` | 内容队列、已回复 id、今日计数、上次主动分享时间 |
+| `whale-mood.json` | 精力 / 想念 / 无聊、上次互动时间、作息中的睡眠标记 |
+| `whale-pet-state.json` | 桌宠气泡限流时间、睡觉状态（没装桌宠就不生成） |
 | `douyin-whale-scheduler.log` | 运行日志 |
 | `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
 | `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
@@ -206,10 +208,22 @@ node scheduler/scheduler.mjs --watch-now
 最小间隔——空队列的唤醒很烧 token，靠概率 + 上限 + 间隔三道闸压住。
 这三项和互动频率（检查间隔/每日上限）都可以在面板「运行参数」里直接调。
 
+**心情、作息与人设**（v1.13.0）：大肥鱼有持久状态，存在 `whale-mood.json`——
+精力（干活掉/睡觉回）、想念（久不聊天涨/回完消息降）、无聊（闲着涨/刷视频降）。
+状态只影响语气和主动分享：睡着或太困时不主动分享，想念/无聊时分享概率上调；
+主人来消息不受作息限制，只是语气会迷糊一点。面板「现在」卡能看三条轴，
+点「摸摸头」会立刻回一个桌宠气泡。人设写在 `persona.text`（面板「人设」卡，
+最多 800 字），拼进每轮任务提示词，改完下一轮就生效；作息
+`mood.sleepWindows` 支持跨午夜（默认 23:30–07:30）。
+
+**桌宠联动**：回复送达/分享视频时走 `/broadcast` 冒一个短气泡，到点 `/sleep`、
+`/wake`。刻意不用 `/work-status`——那个槽位和 ZCode hook 共用，会被覆盖。
+桌宠没开时自动跳过，不影响值班；气泡默认 15 分钟限流。
+
 ### 值班大脑（发布版，不依赖 ZCode）
 
 插件里有一条**常驻值班会话**（DSH 宿主的 agents 服务，会话 id 固定为
-`douyin-whale-duty-v1`）：装载后 15 秒跑第一轮，之后按配置间隔轮询。
+`douyin-whale-duty-v2`）：装载后 15 秒跑第一轮，之后按配置间隔轮询。
 模型和上下文由宿主管，插件只负责投任务、收结果、回读确认。
 
 **模型路由**：值班会话默认跟随宿主的默认模型（`dsh-agent-default-model`）。换模型有两种选择：
@@ -703,6 +717,8 @@ dsh-douyin-whale/
 │   ├── whale_prompt.js          # 两条路径共用的任务提示词（tools / shell 两模式）
 │   ├── diary.js                 # 两本日记（公开反应/私人校准）的读写
 │   ├── dm_reader.js             # 共享的「读一次私信」（文件回退 + 本轮重试）
+│   ├── mood.js                  # 精力/想念/无聊的漂移、事件与提示词块
+│   ├── pet_bridge.js            # 桌宠气泡 / 睡觉起床（独立通道，不碰 work-status）
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认
