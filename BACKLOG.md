@@ -62,7 +62,7 @@
 |---|---|
 | F0 现状诊断 | ✅ **11-11**：工作记忆 80 条/15KB，`facts` 0 条（`addFacts` 只有测试调用），日记 143KB 无检索，每轮只注入最近 6 条 + 自己 5 句 |
 | F1 方案设计 | ✅ **11-11**：工作/情节/语义/反思四层 + 字符二元组索引 + 每日固化 + 会话轮换；含数据模型、验收指标、风险 |
-| F2 Phase 1 实现 | ⬜ 待开工（目标 v1.14.0）：`profile.json` + `episodes.jsonl` + `buildMemoryContext` + 迁移 |
+| F2 Phase 1 实现 | ✅ **11-11 v1.14.0**：`lib/memory_layers.js`（profile/episodes/arcs/index/meta）+ 字符二元组索引 + `buildMemoryContext` + 迁移；真实数据 83 条情节/3035 索引词；两条 tick 已接入，私人日记默认不注入 |
 | F3 Phase 2 | ⬜ 待开工（目标 v1.14.1）：夜间固化 + 证据校验 + 会话轮换简报 |
 | F4 Phase 3 | ⬜ 待评估（目标 v1.15.0）：周反思 + 可选本地向量召回 + 面板记忆浏览器 |
 

@@ -1,8 +1,18 @@
 # 记忆分层设计（Memory Layers）
 
-> 状态：方案，未实现。目标版本 v1.14.0 起分阶段落地。
+> 状态：Phase 1 已实现（v1.14.0）；Phase 2/3 待做。
 > 日期：2026-11-11
-> 相关：`scheduler/memory.mjs`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
+> 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
+
+## 0. 实现进度
+
+| 阶段 | 状态 |
+|---|---|
+| Phase 0 埋点 | ✅ 每轮日志只记注入条数/字数；面板状态卡显示「N 情节 · M 事实」；`GET /memory/layers` |
+| Phase 1 四层 + 检索 + 迁移 | ✅ v1.14.0：`lib/memory_layers.js`；真实数据迁移 83 条情节、3035 索引词；两条 tick 都接入 |
+| Phase 2 固化 + 会话轮换 | ⬜ 待做 |
+| Phase 3 周反思 + 可选向量 + 面板浏览器 | ⬜ 待做 |
+
 
 ## 1. 要解决的问题
 

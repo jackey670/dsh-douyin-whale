@@ -198,6 +198,7 @@ node scheduler/scheduler.mjs --watch-now
 | `douyin-whale-state.json` | 内容队列、已回复 id、今日计数、上次主动分享时间 |
 | `whale-mood.json` | 精力 / 想念 / 无聊、上次互动时间、作息中的睡眠标记 |
 | `whale-pet-state.json` | 桌宠气泡限流时间、睡觉状态（没装桌宠就不生成） |
+| `memory/episodes.jsonl` / `profile.json` / `index.json` | 分层长期记忆：情节、稳定事实、检索索引（v1.14.0） |
 | `douyin-whale-scheduler.log` | 运行日志 |
 | `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
 | `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
@@ -219,6 +220,11 @@ node scheduler/scheduler.mjs --watch-now
 **桌宠联动**：回复送达/分享视频时走 `/broadcast` 冒一个短气泡，到点 `/sleep`、
 `/wake`。刻意不用 `/work-status`——那个槽位和 ZCode hook 共用，会被覆盖。
 桌宠没开时自动跳过，不影响值班；气泡默认 15 分钟限流。
+
+**长期记忆（v1.14.0）**：首次启动把现有 80 条私信 + 两本日记迁移成
+`memory/episodes.jsonl`（私信按天、日记按小节），每轮按当前内容检索 3–4 条注入
+提示词；私人日记默认不注入。索引是字符二元组倒排，不依赖向量库。方案与验收见
+[`docs/MEMORY-LAYERS.md`](docs/MEMORY-LAYERS.md)。
 
 ### 值班大脑（发布版，不依赖 ZCode）
 
@@ -719,6 +725,7 @@ dsh-douyin-whale/
 │   ├── dm_reader.js             # 共享的「读一次私信」（文件回退 + 本轮重试）
 │   ├── mood.js                  # 精力/想念/无聊的漂移、事件与提示词块
 │   ├── pet_bridge.js            # 桌宠气泡 / 睡觉起床（独立通道，不碰 work-status）
+│   ├── memory_layers.js         # 四层记忆：迁移、索引、检索、预算注入
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认
@@ -757,7 +764,8 @@ dsh-douyin-whale/
     ├── COOKIE-GUIDE.md          # 登录与 cookie 导出
     ├── HTTP-API.md              # 接口文档与错误码
     ├── SECURITY.md              # 安全模型
-    └── LINUX-ADAPTER.md         # Linux 适配说明
+    ├── LINUX-ADAPTER.md         # Linux 适配说明
+    └── MEMORY-LAYERS.md         # 记忆分层设计与验收
 ```
 
 ## 开发

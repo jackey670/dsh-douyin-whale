@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 18;
+    const PANEL_BUILD = 19;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -363,7 +363,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.13.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.14.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -385,9 +385,12 @@ window.__ModuleLoader__.load({
                   h('span', { 'data-dy2-v': '' }, data.duty_enabled ? '已启用' : '未启用')),
                 h('div', { 'data-dy2-stat': '' },
                   h('span', { 'data-dy2-k': '' }, '记忆'),
-                  h('span', { 'data-dy2-v': '' }, data.memory?.files
-                    ? `${data.memory.files} 份 · ${Math.round(data.memory.bytes / 1024)} KB`
-                    : '还没有')))
+                  h('span', { 'data-dy2-v': '' },
+                    data.memory?.layers?.episodes
+                      ? `${data.memory.layers.episodes} 情节 · ${data.memory.layers.profile} 事实`
+                      : data.memory?.files
+                        ? `${data.memory.files} 份 · ${Math.round(data.memory.bytes / 1024)} KB`
+                        : '还没有')))
             : h('div', { 'data-dy2-empty': '' }, busy === 'load' ? '加载中…' : '没有数据'),
           gate.cooldown_remaining_s > 0 || (data?.today?.loginFails ?? 0) > 0
             ? h('div', { 'data-dy2-row': '' },

@@ -26,6 +26,7 @@ import { runWatchRound, inWatchWindow, shouldProactiveShare } from '../lib/whale
 import { readDm } from '../lib/dm_reader.js'
 import { applyMoodEvent, applyRoundMood, readMood } from '../lib/mood.js'
 import { petNotify, syncPetSleep } from '../lib/pet_bridge.js'
+import { ensureMemoryLayers, withMemoryLayers } from '../lib/memory_layers.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
   readState as readStateFile, updateState as updateStateFile, writeState as writeStateFile,
@@ -201,6 +202,7 @@ async function tick({ manual = false } = {}) {
     return
   }
   // 心情/作息：先让桌宠跟上（到点睡觉/起床），再决定这轮怎么说话
+  ensureMemoryLayers({ home: DSH_HOME, nick: ownerNick, log })
   const mood = readMood({ file: MOOD_FILE, cfg })
   void syncPetSleep({ view: mood, home: DSH_HOME, cfg, log })
 
@@ -217,10 +219,19 @@ async function tick({ manual = false } = {}) {
       state: { read: () => readState(), update: (mutate) => updateState(mutate) },
       ops: { mergeQueue, pendingOf, bumpAttempt, capRepliedIds, maxAttempts: MAX_ATTEMPTS },
       brain: { dispatch: async ({ prompt }) => wakeAgent(prompt, 'watch') },
-      buildPrompt: (ctx) => buildTaskPrompt({
-        ...ctx, root: ROOT, home: DSH_HOME,
-        persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle, text: cfg.persona?.text },
-      }),
+      buildPrompt: (ctx) => {
+        const mem = withMemoryLayers({
+          home: DSH_HOME,
+          nick: ownerNick,
+          query: [ctx.item?.title, ctx.item?.text].filter(Boolean).join(' ').slice(0, 200),
+          mem: ctx.mem,
+          log,
+        })
+        return buildTaskPrompt({
+          ...ctx, mem, root: ROOT, home: DSH_HOME,
+          persona: { name: cfg.persona?.name, ownerTitle: cfg.persona?.ownerTitle, text: cfg.persona?.text },
+        })
+      },
       checkDm: () => readDm({ ownerNick, py, root: ROOT, dataDir: path.join(ROOT, 'data'), log }),
       log, home: DSH_HOME, mem, root: ROOT, mood,
       mergeMemory: (after) => mergeDmMemory(DSH_HOME, ownerNick, after.messages),
@@ -281,7 +292,13 @@ async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
   }
   try {
     beginReplyMarker(DSH_HOME, { id: `share-${Date.now()}`, kind: 'video' })
-    const mem = dmContext(DSH_HOME, ownerNick)
+    const mem = withMemoryLayers({
+      home: DSH_HOME,
+      nick: ownerNick,
+      query: (cfg.preferences?.like ?? []).join(' '),
+      mem: dmContext(DSH_HOME, ownerNick),
+      log,
+    })
     const r = await wakeAgent(buildSharePrompt({ ownerNick, mem, cfg, root: ROOT, mood }), 'share')
     // 无论成败都记时间戳：这次机会用掉了，限流闸才算数
     updateState((c) => ({ ...c, lastShareAt: new Date().toISOString() }))
