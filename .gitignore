@@ -28,6 +28,9 @@ pnpm-lock.yaml
 *.part
 *.jpg
 
+# 发版说明只进 CHANGELOG / GitHub Release，不再往仓库根目录加文件
+RELEASE-*.md
+
 # ── 本地日记与状态（不入库）───────────────────────────────────────────
 whale-diary*.md
 seen.json

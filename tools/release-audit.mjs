@@ -4,7 +4,7 @@
  * release-audit 思路：能机器查的绝不靠人眼）。
  *
  * 检查项：
- *   ① package.json / CHANGELOG / RELEASE-*.md 三方版本一致
+ *   ① package.json / CHANGELOG 两方版本一致
  *   ② files 白名单覆盖所有运行时文件（client.js / scheduler / start-whale）
  *   ③ dsh.client 段存在（面板能被注入的前提）
  *   ④ 测试文件都在（lib/*.test.mjs + tests/）
@@ -30,15 +30,12 @@ const oks = [];
 const ok = (m) => oks.push(m);
 const bad = (m) => problems.push(m);
 
-// ① 三方版本一致
+// ① 版本一致（发版说明只写 CHANGELOG，仓库里不再放 RELEASE-*.md）
 if (pkg.version !== version) bad(`package.json 版本 ${pkg.version} ≠ 目标 ${version}`);
 else ok(`package.json 版本 = ${version}`);
 const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
 if (!changelog.includes(`## ${version}`)) bad(`CHANGELOG 没有 ${version} 小节`);
 else ok(`CHANGELOG 有 ${version} 小节`);
-const releaseDoc = `RELEASE-${version}.md`;
-if (!fs.existsSync(releaseDoc)) bad(`缺少 ${releaseDoc}`);
-else ok(`${releaseDoc} 存在`);
 
 // ② files 白名单
 const need = ['client.js', 'douyin.mjs', 'index.js',
@@ -89,7 +86,8 @@ else ok(`面板版本 = ${version}`);
 // ④ 测试文件
 const testFiles = ['tests/test_safety.py', 'tests/test_readback.py', 'tests/test_send_gate.py',
   'tests/test_fixture.py', 'scheduler/memory.test.mjs', 'lib/panel.test.mjs',
-  'lib/panel_api.test.mjs', 'lib/duty_agent.test.mjs', 'lib/whale_tick.test.mjs'];
+  'lib/panel_api.test.mjs', 'lib/duty_agent.test.mjs', 'lib/whale_tick.test.mjs',
+  'lib/mood.test.mjs', 'lib/pet_bridge.test.mjs'];
 for (const f of testFiles) {
   if (fs.existsSync(f)) ok(`测试在 ${f}`);
   else bad(`测试缺失: ${f}`);
@@ -103,6 +101,9 @@ else ok('工作区干净');
 const tracked = (() => {
   try { return execSync('git ls-files', { encoding: 'utf8' }).split('\n'); } catch { return []; }
 })();
+const oldReleaseDocs = tracked.filter((f) => /^RELEASE-.*\.md$/.test(f));
+if (oldReleaseDocs.length) bad(`根目录不应再有逐版本发版说明（${oldReleaseDocs.length} 个）`);
+else ok('无逐版本 RELEASE md');
 for (const f of tracked) {
   if (/cookie|storage_state/i.test(f) && !f.endsWith('.example') && !f.endsWith('-GUIDE.md')) {
     bad(`凭证文件被 git 跟踪: ${f}`);

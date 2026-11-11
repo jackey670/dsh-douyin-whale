@@ -75,7 +75,7 @@
     }
   },
   "scripts": {
-    "check": "node --check index.js && node --check client.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js && node --check lib/douyin_http_client.mjs && node --check lib/whale_state.js && node --check lib/panel_api.js && node --check lib/whale_tick.js && node --check lib/whale_readback.js && node --check lib/whale_prompt.js && node --check lib/whale_round.js && node --check lib/dm_reader.js && node --check lib/diary.js && node --check lib/mood.js && node --check lib/pet_bridge.js && node --check lib/duty_agent.js && node --check lib/services.js && node --check lib/persona.js && node --check lib/reply_marker.js && node --check lib/meme.js && node --check douyin.mjs && node --check scheduler/scheduler.mjs && node --check scheduler/state.mjs && node --check scheduler/prompt.mjs && node --check scheduler/memory.mjs && node --check tools/whitebox-probe.mjs",
+    "check": "node --check index.js && node --check client.js && node --check lib/backend.js && node --check lib/tools.js && node --check lib/normalize.js && node --check lib/douyin_http_client.mjs && node --check lib/whale_state.js && node --check lib/panel_api.js && node --check lib/whale_tick.js && node --check lib/whale_readback.js && node --check lib/whale_prompt.js && node --check lib/whale_round.js && node --check lib/dm_reader.js && node --check lib/diary.js && node --check lib/mood.js && node --check lib/pet_bridge.js && node --check lib/duty_agent.js && node --check lib/services.js && node --check lib/persona.js && node --check lib/reply_marker.js && node --check lib/meme.js && node --check douyin.mjs && node --check scheduler/scheduler.mjs && node --check scheduler/state.mjs && node --check scheduler/prompt.mjs && node --check scheduler/memory.mjs && node --check tools/whitebox-probe.mjs && node --check tools/release-notes.mjs",
     "http": "python python/douyin_http.py",
     "douyin": "node douyin.mjs",
     "test:fixture": "node tools/run-py.mjs tests/test_fixture.py",
@@ -87,6 +87,7 @@
     "test:meme": "node scheduler/meme.test.mjs",
     "test:js": "node scheduler/memory.test.mjs && node scheduler/state.test.mjs && node scheduler/send_gate.test.mjs && node scheduler/meme.test.mjs",
     "probe:whitebox": "node tools/whitebox-probe.mjs",
+    "release:notes": "node tools/release-notes.mjs",
     "test:panel": "node lib/panel.test.mjs",
     "test:api": "node lib/panel_api.test.mjs",
     "preview": "node tools/panel-preview/server.mjs",

@@ -9,7 +9,7 @@
 > **2026-10-31 收工存档（明日继续）**
 > 1. **GitHub 推送挂起**：v1.6.0（`f4cee8e` + tag）只在 GitCode；今晚 github.com 直连/代理全断。
 >    网络恢复后跑 `git push origin main refs/tags/v1.6.0`，
->    再 `gh release create v1.6.0 --notes-file RELEASE-1.6.0.md`。
+>    再 `gh release create v1.6.0`（说明从 CHANGELOG 抽）。
 > 2. **值班大脑已在 0.2.2 真机常驻**（模型走自定义网关）：重启宿主用 `~/.dsh/start-dsh.cmd 022`
 >    （已内嵌 `DOUYIN_IM_ALLOW_SEND` 与网关 key 环境变量，网关服务需先开着）。
 >    关机前在飞的一轮会被掐断——队列/尝试次数已落盘，跨天保留，明天自然续上。

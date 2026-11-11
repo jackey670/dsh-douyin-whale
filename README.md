@@ -784,6 +784,24 @@ placeholder，对照 `python/douyin_im.py` 顶部的常量调整。
 `text` / `content_title`）。注意里面**没有时间戳**，列表方向只能靠几何位置判断；
 系统消息（`is_system_type`）必须跳过，否则空文本会被当成「我发的空消息」。
 
+### 发版
+
+发版说明只写 `CHANGELOG.md` 的 `## <版本>` 小节，**仓库根目录不再放 `RELEASE-*.md`**
+（`.gitignore` 已挡）。GitHub Release 正文从 CHANGELOG 抽：
+
+```bash
+git add -A && git commit -m "chore: ..."   # 审计会查工作区干净，先提交
+node tools/release-audit.mjs 1.14.0
+git tag v1.14.0
+git push gitcode main refs/tags/v1.14.0
+git push origin main refs/tags/v1.14.0
+node tools/release-notes.mjs 1.14.0 > /tmp/notes.md
+gh release create v1.14.0 --title "v1.14.0 — ..." --notes-file /tmp/notes.md
+```
+
+`package.json` / `CHANGELOG` / `client.js` 的 `vX.Y.Z·bN` 三处版本要一致；
+每次改 `client.js` 把 `PANEL_BUILD` +1。
+
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。仓库中包含的第三方 MIT 代码版权声明保留在

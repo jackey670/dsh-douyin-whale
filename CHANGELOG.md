@@ -406,7 +406,7 @@
 - **DSH 0.2.2「第三方 client 面板 404」定论为误诊**：`/plugins` 路由对无 rev 的猜测 URL
   按设计 404（rev 只随 boot graph 下发）。真 UI 实测：boot graph 有本插件行、
   设置弹窗出现「大肥鱼刷抖音」页签、面板完整渲染、API 全通。详见
-  `docs/UPSTREAM-NOTES.md` 与 `RELEASE-1.5.1.md` 的更正。
+  `docs/UPSTREAM-NOTES.md`。
 - **值班大脑 0.2.2 真机全链路闭环**：读主人 sticker → `douyin_meme_pick` →
   `douyin_dm_send`（带图+caption，`send:true`）→ 回读确认（回复 19 字）→ 标记已回复。
   模型路由 = 自定义网关（settings.yaml `llm-pi-ai.providers` 声明 +
