@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.14.1 — 2026-11-12
+
+记忆固化（记忆分层 Phase 2A）：新私信/日记自动抽成事实和情节。
+
+### 新增
+
+- **`lib/memory_consolidate.js`**：
+  - 采集迁移之后的新私信 + 两本日记小节（带来源可见性）；
+  - 模型只输出 JSON，抽 `facts` / `episodes` / `profile_updates`；
+  - **证据校验**：每条候选必须能在素材里找到原话（归一化子串），
+    URL/控制字符/空证据/重复全部丢弃；
+  - 事实按相似度合并（≥0.8 视为同一条），情节按摘要+证据去重后追加；
+  - 写回后重建索引，更新 `meta.lastConsolidatedAt`。
+- **触发**：`memory.consolidate`（默认开、≥10 条新消息或凌晨 3–7 点、
+  两次尝试至少隔 6 小时）；手动 `node scheduler/scheduler.mjs --memory-consolidate`
+  （会唤醒一次模型，调度器在跑时先 `--stop`）。
+- **隐私**：私人日记来源的情节/facts 标 `visibility=private`；
+  `[wake:memory]` 的模型输出在日志里隐藏，只记条数。
+- 迁移完成时把 `lastConsolidatedAt` 设为迁移时间，固化只吃迁移之后的新素材。
+
+### 说明
+
+- Phase 2A 先覆盖**独立调度器**；DSH 值班会话的固化/轮换在 Phase 2B 做。
+- 会话轮换（上下文顶满时生成交接简报、换新值班会话）仍未做。
+
+### 验证
+
+- 新增 `lib/memory_consolidate.test.mjs`（8 项：采集/闸门/JSON 容错/
+  证据校验/端到端/去重/坏 JSON/提示词）。
+- `npm test`：Python 32 + JS 141 全绿。
+- 真机：3 条迁移后素材 → 1 条情节、0 条事实、0 丢弃、20 秒；
+  `meta.lastConsolidation` 已落盘，模型输出未进日志。
+
 ## 1.14.0 — 2026-11-11
 
 大肥鱼开始有长期记忆：四层存储 + 检索注入（记忆分层 Phase 1）。

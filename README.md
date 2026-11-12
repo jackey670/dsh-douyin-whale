@@ -188,6 +188,9 @@ node scheduler/scheduler.mjs --memory-sync   # 把当前会话灌进本地记忆
 
 # 立刻跑一轮
 node scheduler/scheduler.mjs --watch-now
+
+# 手动跑一次记忆固化（先停调度器）
+node scheduler/scheduler.mjs --memory-consolidate
 ```
 
 状态和记忆都在 `~/.dsh/`：
@@ -225,6 +228,10 @@ node scheduler/scheduler.mjs --watch-now
 `memory/episodes.jsonl`（私信按天、日记按小节），每轮按当前内容检索 3–4 条注入
 提示词；私人日记默认不注入。索引是字符二元组倒排，不依赖向量库。方案与验收见
 [`docs/MEMORY-LAYERS.md`](docs/MEMORY-LAYERS.md)。
+
+**记忆固化（v1.14.1）**：迁移之后的新私信/日记，≥10 条消息或凌晨 3–7 点触发一次；
+模型抽 facts/episodes，**证据必须对上原话**，私人日记来源标 private，日志只记条数。
+手动：`node scheduler/scheduler.mjs --stop` 后跑 `--memory-consolidate`。
 
 ### 值班大脑（发布版，不依赖 ZCode）
 
@@ -726,6 +733,7 @@ dsh-douyin-whale/
 │   ├── mood.js                  # 精力/想念/无聊的漂移、事件与提示词块
 │   ├── pet_bridge.js            # 桌宠气泡 / 睡觉起床（独立通道，不碰 work-status）
 │   ├── memory_layers.js         # 四层记忆：迁移、索引、检索、预算注入
+│   ├── memory_consolidate.js    # 记忆固化：新素材 → facts/episodes（证据校验）
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

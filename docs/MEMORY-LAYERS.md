@@ -1,6 +1,6 @@
 # 记忆分层设计（Memory Layers）
 
-> 状态：Phase 1 已实现（v1.14.0）；Phase 2/3 待做。
+> 状态：Phase 2A 已实现（v1.14.1）；Phase 2B/3 待做。
 > 日期：2026-11-11
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
@@ -10,7 +10,8 @@
 |---|---|
 | Phase 0 埋点 | ✅ 每轮日志只记注入条数/字数；面板状态卡显示「N 情节 · M 事实」；`GET /memory/layers` |
 | Phase 1 四层 + 检索 + 迁移 | ✅ v1.14.0：`lib/memory_layers.js`；真实数据迁移 83 条情节、3035 索引词；两条 tick 都接入 |
-| Phase 2 固化 + 会话轮换 | ⬜ 待做 |
+| Phase 2A 记忆固化 | ✅ v1.14.1：`lib/memory_consolidate.js`；证据校验/去重/私人标记；独立调度器已接，值班会话待接 |
+| Phase 2B 会话轮换 | ⬜ 待做（值班会话上下文到阈值时生成交接简报、换新会话） |
 | Phase 3 周反思 + 可选向量 + 面板浏览器 | ⬜ 待做 |
 
 
@@ -284,10 +285,11 @@ Token 预算（不含任务/persona）：
 |---|---|---|
 | Phase 0 | 埋点：每轮 token、注入记忆 id、面板记忆统计 | 0.5 天 |
 | Phase 1 | 四层文件 + 二元组索引 + `buildMemoryContext` + 迁移 | 2–3 天 |
-| Phase 2 | 夜间固化 + 证据校验 + 会话轮换简报 | 2–3 天 |
+| Phase 2A | 夜间固化 + 证据校验 | ✅ v1.14.1 |
+| Phase 2B | 会话轮换简报 | 1–2 天 |
 | Phase 3 | 周反思 + 可选本地向量召回 + 面板记忆浏览器 | 2–4 天 |
 
-建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2，v1.15.0 = Phase 3。
+建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2A，v1.14.2 = Phase 2B，v1.15.0 = Phase 3。
 
 ## 12. 风险与对策
 

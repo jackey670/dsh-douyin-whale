@@ -8,6 +8,7 @@
  * 用法：
  *   node scheduler.mjs                    启动常驻调度器
  *   node scheduler.mjs --watch-now        立刻检查 + 看
+ *   node scheduler.mjs --memory-consolidate  立即跑一次记忆固化
  *   node scheduler.mjs --status           看状态
  *   node scheduler.mjs --stop             停止
  *
@@ -27,6 +28,7 @@ import { readDm } from '../lib/dm_reader.js'
 import { applyMoodEvent, applyRoundMood, readMood } from '../lib/mood.js'
 import { petNotify, syncPetSleep } from '../lib/pet_bridge.js'
 import { ensureMemoryLayers, withMemoryLayers } from '../lib/memory_layers.js'
+import { runConsolidation } from '../lib/memory_consolidate.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
   readState as readStateFile, updateState as updateStateFile, writeState as writeStateFile,
@@ -176,8 +178,17 @@ function wakeAgent(text, tag = 'wake') {
       const sid = parsed?.sessionId || (out.match(/"sessionId"\s*:\s*"([^"]+)"/) || [])[1] || null
       const response = String(parsed?.response ?? '')
       const ok = code === 0 && !!sid && !timedOut
-      if (ok) { lastWakeFailure = 0; log(`[wake:${tag}] 完成 · ${sid} · response=${response.slice(0, 240).replace(/\n/g, ' ')}`) }
-      else { lastWakeFailure = Date.now(); log(`[wake:${tag}] 失败 code=${code}\n${(err || out).slice(-1800)}`) }
+      if (ok) {
+        lastWakeFailure = 0
+        const shown = tag === 'memory'
+          ? '<memory-json hidden>'
+          : response.slice(0, 240).replace(/\n/g, ' ')
+        log(`[wake:${tag}] 完成 · ${sid} · response=${shown}`)
+      } else {
+        lastWakeFailure = Date.now()
+        const detail = tag === 'memory' ? '（输出已隐藏）' : `\n${(err || out).slice(-1800)}`
+        log(`[wake:${tag}] 失败 code=${code}${detail}`)
+      }
       resolve({ ok, code, response, sessionId: sid, timedOut })
     }
     child.on('close', finish)
@@ -264,7 +275,28 @@ async function tick({ manual = false } = {}) {
       writeState({ ...readState(), loginFails: fails })
       log(`[tick] ⚠️ 登录失效（连续 ${fails} 次）`)
     }
+
+    // 记忆固化：只在非手动 tick 的后台跑，有素材且过闸才唤醒
+    if (!manual) {
+      await maybeConsolidateMemory({ cfg, home: DSH_HOME, nick: ownerNick, log })
+    }
   } finally { checking = false }
+}
+
+/** 记忆固化（Phase 2A）：把新私信/日记抽成事实与情节；日志只记条数。 */
+async function maybeConsolidateMemory({ cfg, home, nick, log, force = false }) {
+  return runConsolidation({
+    home, nick, cfg, force, log,
+    invoke: async (prompt) => {
+      const r = await wakeAgent(prompt, 'memory')
+      if (!r.ok) {
+        const err = new Error(r.skipped || r.error || 'wake-failed')
+        if (r.skipped === 'busy') err.code = 'busy'
+        throw err
+      }
+      return r.response
+    },
+  })
 }
 
 /** 主动分享轮（shell 版）：队列空闲时按概率刷一条视频卡片给主人。
@@ -434,6 +466,7 @@ if (has('--help') || has('-h')) {
   node scheduler.mjs --watch-now   立刻检查私信 + 看
   node scheduler.mjs --dry-tick    只打印本轮会处理哪条（不唤醒模型）
   node scheduler.mjs --memory-sync 把当前会话灌进本地记忆（不唤醒模型）
+  node scheduler.mjs --memory-consolidate  立即跑一次记忆固化（会唤醒模型）
   node scheduler.mjs --status      状态
   node scheduler.mjs --stop        停止`)
 } else if (has('--status')) {
@@ -453,6 +486,15 @@ if (has('--help') || has('-h')) {
   const r = mergeDmMemory(DSH_HOME, ownerNick, dm.messages || [])
   console.log(JSON.stringify({ ok: true, added: r?.added ?? 0, total: r?.total ?? 0 }, null, 2))
   process.exit(0)
+} else if (has('--memory-consolidate')) {
+  // 手动固化：会唤醒一次模型；调度器在跑时先 --stop，避免两个唤醒并发。
+  if (daemonPid()) { console.log('调度器在运行，先 --stop 再手动固化'); process.exit(1) }
+  const cfg = readConfig()
+  const r = await maybeConsolidateMemory({
+    cfg, home: DSH_HOME, nick: cfg.owner?.nickname ?? '', log, force: true,
+  })
+  console.log(JSON.stringify(r, null, 2))
+  process.exit(r.ok ? 0 : 1)
 } else if (has('--dry-tick')) {
   // 只读：读私信 + 打印本轮会处理哪条，不唤醒模型、不花钱
   const cfg = readConfig()

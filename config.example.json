@@ -40,5 +40,12 @@
     "enabled": true,
     "sleepEnabled": true,
     "minIntervalMinutes": 15
+  },
+  "memory": {
+    "consolidate": {
+      "enabled": true,
+      "minMessages": 10,
+      "minIntervalHours": 6
+    }
   }
 }
