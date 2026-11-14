@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 20;
+    const PANEL_BUILD = 21;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -483,6 +483,15 @@ window.__ModuleLoader__.load({
           onClick: () => pendingAct(p.id, 'dismiss'),
         }, '忽略'));
 
+      const arcRow = (a) => h('div', { 'data-dy2-item': '', key: `a:${a.id}` },
+        h('span', { 'data-dy2-badge': a.private ? 'data-warn' : 'data-ok' },
+          a.private ? '私人叙事' : '叙事'),
+        h('div', { 'data-dy2-grow': '' },
+          h('div', { 'data-dy2-kv': '' }, a.title),
+          h('div', { 'data-dy2-sub': '' },
+            `${a.period} · ${a.summary}`
+            + (a.episodeCount ? ` · 引用 ${a.episodeCount} 条` : ''))));
+
       const memRows = () => {
         const r = memResults || mem;
         if (!r) return h('div', { 'data-dy2-empty': '' }, '还没有记忆数据');
@@ -504,7 +513,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.14.2·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.14.3·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -801,6 +810,7 @@ window.__ModuleLoader__.load({
           mem
             ? h('div', { 'data-dy2-sub': '' },
               `索引 ${mem.stats?.terms ?? 0} 词 · 最后固化 ${fmtWhen(mem.stats?.lastConsolidatedAt)}`
+              + ` · 叙事 ${mem.stats?.arcs ?? 0} 条`
               + ` · ${Math.round((mem.stats?.bytes ?? 0) / 1024)} KB`)
             : h('div', { 'data-dy2-empty': '' }, '还没有记忆数据'),
           h('div', { 'data-dy2-search': '' },
@@ -830,6 +840,11 @@ window.__ModuleLoader__.load({
               h('div', { 'data-dy2-memlist': '' }, ...mem.pending.map(pendingRow)))
             : null,
           memRows(),
+          !memResults && (mem?.arcs ?? []).length
+            ? h('div', null,
+              h('div', { 'data-dy2-label': '' }, '最近这几周'),
+              h('div', { 'data-dy2-memlist': '' }, ...mem.arcs.map(arcRow)))
+            : null,
           memResults
             ? h('div', { 'data-dy2-sub': '' },
               `搜索「${memResults.query || '（空）'}」：事实 ${memResults.facts?.length ?? 0} 条 · `

@@ -191,6 +191,8 @@ node scheduler/scheduler.mjs --watch-now
 
 # 手动跑一次记忆固化（先停调度器）
 node scheduler/scheduler.mjs --memory-consolidate
+# 手动跑一次周反思（先停调度器）
+node scheduler/scheduler.mjs --memory-reflect
 ```
 
 状态和记忆都在 `~/.dsh/`：
@@ -201,7 +203,7 @@ node scheduler/scheduler.mjs --memory-consolidate
 | `douyin-whale-state.json` | 内容队列、已回复 id、今日计数、上次主动分享时间 |
 | `whale-mood.json` | 精力 / 想念 / 无聊、上次互动时间、作息中的睡眠标记 |
 | `whale-pet-state.json` | 桌宠气泡限流时间、睡觉状态（没装桌宠就不生成） |
-| `memory/episodes.jsonl` / `profile.json` / `index.json` | 分层长期记忆：情节、稳定事实、检索索引（v1.14.0） |
+| `memory/episodes.jsonl` / `profile.json` / `arcs.json` / `index.json` | 分层长期记忆：情节、稳定事实、叙事线、检索索引（v1.14.0–v1.14.3） |
 | `douyin-whale-scheduler.log` | 运行日志 |
 | `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
 | `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
@@ -239,6 +241,11 @@ node scheduler/scheduler.mjs --memory-consolidate
 面板「记忆」卡可搜索、置顶、删除、采纳/忽略待确认；搜索结果默认不含私人条目。
 配置里的 `preferences.like/dislike` 首次启动会写成置顶事实；固化时 confidence
 低于 0.75 的事实进 `profile.pending`，人工采纳后才进档案。
+
+**周反思（v1.14.3）**：最近 7 天的情节归纳成 1–2 条叙事线（`memory/arcs.json`），
+每轮以【最近这几周】注入；只引用已有情节，不产生新事实。默认 7 天一次、
+至少 5 条情节；引用私人日记的叙事线标 private，默认不注入。手动：
+`node scheduler/scheduler.mjs --stop` 后跑 `--memory-reflect`。
 
 ### 值班大脑（发布版，不依赖 ZCode）
 
@@ -746,6 +753,7 @@ dsh-douyin-whale/
 │   ├── pet_bridge.js            # 桌宠气泡 / 睡觉起床（独立通道，不碰 work-status）
 │   ├── memory_layers.js         # 四层记忆：迁移、索引、检索、预算注入
 │   ├── memory_consolidate.js    # 记忆固化：新素材 → facts/episodes（证据校验）
+│   ├── memory_reflect.js        # 周反思：最近 7 天情节 → 叙事线（arcs）
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

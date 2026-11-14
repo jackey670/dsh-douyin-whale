@@ -46,6 +46,12 @@
       "enabled": true,
       "minMessages": 10,
       "minIntervalHours": 6
+    },
+    "reflect": {
+      "enabled": true,
+      "minEpisodes": 5,
+      "minIntervalDays": 7,
+      "minIntervalHours": 6
     }
   }
 }

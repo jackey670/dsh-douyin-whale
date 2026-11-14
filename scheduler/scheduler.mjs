@@ -9,6 +9,7 @@
  *   node scheduler.mjs                    启动常驻调度器
  *   node scheduler.mjs --watch-now        立刻检查 + 看
  *   node scheduler.mjs --memory-consolidate  立即跑一次记忆固化
+ *   node scheduler.mjs --memory-reflect      立即跑一次周反思
  *   node scheduler.mjs --status           看状态
  *   node scheduler.mjs --stop             停止
  *
@@ -29,6 +30,7 @@ import { applyMoodEvent, applyRoundMood, readMood } from '../lib/mood.js'
 import { petNotify, syncPetSleep } from '../lib/pet_bridge.js'
 import { ensureMemoryLayers, seedPreferenceFacts, withMemoryLayers } from '../lib/memory_layers.js'
 import { runConsolidation } from '../lib/memory_consolidate.js'
+import { runReflection } from '../lib/memory_reflect.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
   readState as readStateFile, updateState as updateStateFile, writeState as writeStateFile,
@@ -299,6 +301,8 @@ async function tick({ manual = false } = {}) {
     // 记忆固化：只在非手动 tick 的后台跑，有素材且过闸才唤醒
     if (!manual) {
       await maybeConsolidateMemory({ cfg, home: DSH_HOME, nick: ownerNick, log })
+      // 周反思：默认 7 天一次，过闸才唤醒；和固化一样只在后台跑
+      await maybeReflectMemory({ cfg, home: DSH_HOME, log })
     }
   } finally { checking = false }
 }
@@ -307,6 +311,22 @@ async function tick({ manual = false } = {}) {
 async function maybeConsolidateMemory({ cfg, home, nick, log, force = false }) {
   return runConsolidation({
     home, nick, cfg, force, log,
+    invoke: async (prompt) => {
+      const r = await wakeAgent(prompt, 'memory')
+      if (!r.ok) {
+        const err = new Error(r.skipped || r.error || 'wake-failed')
+        if (r.skipped === 'busy') err.code = 'busy'
+        throw err
+      }
+      return r.response
+    },
+  })
+}
+
+/** 周反思（Phase 3b）：把最近 7 天情节归纳成叙事线；日志只记条数。 */
+async function maybeReflectMemory({ cfg, home, log, force = false }) {
+  return runReflection({
+    home, cfg, force, log,
     invoke: async (prompt) => {
       const r = await wakeAgent(prompt, 'memory')
       if (!r.ok) {
@@ -487,6 +507,7 @@ if (has('--help') || has('-h')) {
   node scheduler.mjs --dry-tick    只打印本轮会处理哪条（不唤醒模型）
   node scheduler.mjs --memory-sync 把当前会话灌进本地记忆（不唤醒模型）
   node scheduler.mjs --memory-consolidate  立即跑一次记忆固化（会唤醒模型）
+  node scheduler.mjs --memory-reflect      立即跑一次周反思（会唤醒模型）
   node scheduler.mjs --status      状态
   node scheduler.mjs --stop        停止`)
 } else if (has('--status')) {
@@ -513,6 +534,13 @@ if (has('--help') || has('-h')) {
   const r = await maybeConsolidateMemory({
     cfg, home: DSH_HOME, nick: cfg.owner?.nickname ?? '', log, force: true,
   })
+  console.log(JSON.stringify(r, null, 2))
+  process.exit(r.ok ? 0 : 1)
+} else if (has('--memory-reflect')) {
+  // 手动周反思：同样会唤醒模型；调度器在跑时先 --stop。
+  if (daemonPid()) { console.log('调度器在运行，先 --stop 再手动反思'); process.exit(1) }
+  const cfg = readConfig()
+  const r = await maybeReflectMemory({ cfg, home: DSH_HOME, log, force: true })
   console.log(JSON.stringify(r, null, 2))
   process.exit(r.ok ? 0 : 1)
 } else if (has('--dry-tick')) {

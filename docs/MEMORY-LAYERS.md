@@ -1,8 +1,8 @@
 # 记忆分层设计（Memory Layers）
 
-> 状态：Phase 2A 已实现（v1.14.1）；Phase 3 的评测与面板浏览器已做（v1.14.2）；
-> 周反思/会话轮换待做。
-> 日期：2026-11-11（v1.14.2 更新于 2026-11-14）
+> 状态：Phase 2A 已实现（v1.14.1）；Phase 3a 评测/面板（v1.14.2）、
+> Phase 3b 周反思（v1.14.3）已做；会话轮换待做。
+> 日期：2026-11-11（v1.14.3 更新于 2026-11-14）
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
 ## 0. 实现进度
@@ -14,7 +14,8 @@
 | Phase 2A 记忆固化 | ✅ v1.14.1：`lib/memory_consolidate.js`；证据校验/去重/私人标记；独立调度器已接，值班会话待接 |
 | Phase 2B 会话轮换 | ⬜ 待做（值班会话上下文到阈值时生成交接简报、换新会话） |
 | Phase 3a 评测 + 面板 | ✅ v1.14.2：`tools/memory-eval.mjs` 30 题；`/memory/overview|search|pin|pending|item`；面板记忆卡；低置信待确认 |
-| Phase 3b 周反思 + 可选向量 | ⬜ 待做（arcs 周反思；向量按评测数据决定，目前暂不上） |
+| Phase 3b 周反思 | ✅ v1.14.3：`lib/memory_reflect.js`；最近 7 天情节 → arcs；私人叙事线默认不注入；面板显示叙事线 |
+| Phase 3c 向量召回 | ⬜ 暂不上：合成集 hit@4 100%，等真实问题集出现缺口再评估 |
 
 
 ## 1. 要解决的问题
@@ -127,17 +128,20 @@ L3 反思摘要   ~/.dsh/memory/arcs.json            按周/主题的叙事线
 
 ```json
 {
-  "id": "arc_2026w45",
-  "period": "2026-11-02 ~ 2026-11-08",
+  "id": "arc_20261114_1",
+  "period": "2026-11-08 ~ 2026-11-14",
   "title": "赶项目的一周",
-  "summary": "主人在赶项目，聊天变少，周末放松下来聊了很多视频。",
-  "episode_ids": ["ep_20261103_002", "ep_20261106_001"],
-  "status": "closed"
+  "summary": "主人连续加班，周末才缓过来；中间还换了新键盘。",
+  "episode_ids": ["ep_20261109_01", "ep_20261110_02"],
+  "visibility": "public",
+  "createdAt": "2026-11-14T11:18:00.000Z",
+  "source": "reflect"
 }
 ```
 
-- 每周一次，或在话题明显切换时新开。
-- 只从已有 episodes 归纳，不引入新事实。
+- 最近 7 天一次；`episode_ids` 只能引用输入素材，至少 2 条；只归纳，不引入新事实。
+- 引用私人日记的 arc 标 `visibility=private`，`buildMemoryContext` 默认不注入。
+- 同一 `period` 重跑会替换旧 arc（不会叠加）；最多保留 52 条。
 
 ### 4.4 索引
 
@@ -196,6 +200,7 @@ Phase 1 用 `index.json`：
 ```text
 【主人档案】（≤8 条，稳定事实）
 【我们之间】（1–2 条关系里程碑/重要情绪）
+【最近这几周】（≤2 条叙事线，默认只放公开 arc）
 【相关回忆】（3–4 条情节，带日期与原话）
 【最近聊过】（6 条对话 + 自己 5 句，现有）
 ```
@@ -218,6 +223,7 @@ Token 预算（不含任务/persona）：
 |---|---|
 | 档案 | ≤200 token |
 | 关系/里程碑 | ≤100 token |
+| 最近这几周 | ≤120 token |
 | 相关回忆 | ≤350 token |
 | 最近对话 | ≤300 token |
 | 合计 | ≤950 token |
@@ -312,10 +318,11 @@ Token 预算（不含任务/persona）：
 | Phase 2A | 夜间固化 + 证据校验 | ✅ v1.14.1 |
 | Phase 2B | 会话轮换简报 | 1–2 天 |
 | Phase 3a | 30 题评测 + 面板记忆浏览器 + 待确认 | ✅ v1.14.2 |
-| Phase 3b | 周反思 arcs + 可选本地向量召回 | 2–4 天 |
+| Phase 3b | 周反思 arcs | ✅ v1.14.3 |
+| Phase 3c | 可选本地向量召回 | ⬜ 暂不上（等真实问题集缺口） |
 
 建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2A，v1.14.2 = Phase 3a，
-v1.14.3 = Phase 2B，v1.15.0 = Phase 3b。
+v1.14.3 = Phase 3b，v1.14.4 = Phase 2B（会话轮换）。
 
 ## 12. 风险与对策
 

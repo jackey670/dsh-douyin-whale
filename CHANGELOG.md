@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.14.3 — 2026-11-14
+
+周反思：把最近 7 天的情节归纳成「最近这几周」的叙事线（记忆分层 Phase 3b）。
+
+### 新增
+
+- **`lib/memory_reflect.js`**：
+  - 取最近 7 天 episodes（最多 40 条），让模型输出 1–2 条 arcs；
+  - `episode_ids` 只能引用素材编号（E1…），对不上/少于 2 条/URL/控制字符/重复全丢；
+  - 引用私人日记的 arc 标 `visibility=private`，默认不注入；
+  - 同一 period 重跑会替换旧 arc，最多保留 52 条；
+  - 闸门：`memory.reflect`（默认开、≥5 条情节、7 天一次、失败重试至少隔 6 小时）。
+- **提示词注入**：`buildMemoryContext` 新增【最近这几周】块（最多 2 条，公开条目）；
+  面板记忆卡显示叙事线，统计加「叙事 N 条」；`GET /memory/overview` 返回最近 3 条。
+- **调度器**：tick 在固化之后跑一次周反思；手动
+  `node scheduler/scheduler.mjs --memory-reflect`（先 `--stop`）。
+- **配置**：`memory.reflect = { enabled, minEpisodes, minIntervalDays, minIntervalHours }`。
+
+### 说明
+
+- 反思只归纳已有情节，不产生新事实；私人叙事线不会进默认提示词。
+- 向量召回仍暂不上：v1.14.2 评测 hit@4 100%，先做叙事层。
+- Phase 2B 值班会话轮换仍未做；独立调度器每轮新会话，不受影响。
+
+### 验证
+
+- `npm test`：Python 32 + JS 162 全绿。
+- 真机：11-08~11-14 的 6 条情节 → 1 条叙事线、0 丢弃、19 秒；公开 arc
+  已进入【最近这几周】，默认上下文 609 字；私人 arc 默认不注入。
+- 面板预览：叙事线与私人叙事正确渲染，无 console 错误。
+
 ## 1.14.2 — 2026-11-14
 
 记忆召回评测 + 面板记忆浏览器（Phase 3 前半），顺手修了检索排序。
