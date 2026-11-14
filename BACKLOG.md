@@ -65,7 +65,8 @@
 | F2 Phase 1 实现 | ✅ **11-11 v1.14.0**：`lib/memory_layers.js`（profile/episodes/arcs/index/meta）+ 字符二元组索引 + `buildMemoryContext` + 迁移；真实数据 83 条情节/3035 索引词；两条 tick 已接入，私人日记默认不注入 |
 | F3a 记忆固化 | ✅ **11-12 v1.14.1**：`lib/memory_consolidate.js`——新私信/日记 → facts/episodes；证据必须对上原话，私人日记标 private；独立调度器已接，真实 3 条素材 → 1 条情节 |
 | F3b 会话轮换 | ⬜ 待开工：值班会话上下文到阈值时生成交接简报、换新会话；DSH 值班路径的固化也要接 |
-| F4 Phase 3 | ⬜ 待评估（目标 v1.15.0）：周反思 + 可选本地向量召回 + 面板记忆浏览器 |
+| F3c 评测 + 面板 | ✅ **11-14 v1.14.2**：`tools/memory-eval.mjs` 30 题（hit@1 85.7% / hit@4 100%）；面板记忆卡 + overview/search/pin/pending/delete；低置信事实进待确认；配置偏好初始化置顶事实 |
+| F4 Phase 3b | ⬜ 待评估（目标 v1.15.0）：周反思 arcs；向量召回按评测数据决定（目前暂不上） |
 
 | # | 问题 | 状态 |
 |---|---|---|

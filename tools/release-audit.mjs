@@ -88,7 +88,7 @@ const testFiles = ['tests/test_safety.py', 'tests/test_readback.py', 'tests/test
   'tests/test_fixture.py', 'scheduler/memory.test.mjs', 'lib/panel.test.mjs',
   'lib/panel_api.test.mjs', 'lib/duty_agent.test.mjs', 'lib/whale_tick.test.mjs',
   'lib/mood.test.mjs', 'lib/pet_bridge.test.mjs', 'lib/memory_layers.test.mjs',
-  'lib/memory_consolidate.test.mjs'];
+  'lib/memory_consolidate.test.mjs', 'tools/memory-eval.mjs'];
 for (const f of testFiles) {
   if (fs.existsSync(f)) ok(`测试在 ${f}`);
   else bad(`测试缺失: ${f}`);

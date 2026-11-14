@@ -233,6 +233,13 @@ node scheduler/scheduler.mjs --memory-consolidate
 模型抽 facts/episodes，**证据必须对上原话**，私人日记来源标 private，日志只记条数。
 手动：`node scheduler/scheduler.mjs --stop` 后跑 `--memory-consolidate`。
 
+**召回评测与面板（v1.14.2）**：`node tools/memory-eval.mjs` 跑内置 30 题
+（合成语料，事实/事件/私人/负例四类），输出 hit@1、hit@4、MRR、预算与耗时；
+`--real` 用本机记忆做索引冒烟，`--questions` 用手写问题集（文件别入库）。
+面板「记忆」卡可搜索、置顶、删除、采纳/忽略待确认；搜索结果默认不含私人条目。
+配置里的 `preferences.like/dislike` 首次启动会写成置顶事实；固化时 confidence
+低于 0.75 的事实进 `profile.pending`，人工采纳后才进档案。
+
 ### 值班大脑（发布版，不依赖 ZCode）
 
 插件里有一条**常驻值班会话**（DSH 宿主的 agents 服务，会话 id 固定为
@@ -326,6 +333,11 @@ llm-pi-ai:
 | GET | `/login/qr.png` | 内嵌二维码（只在扫码进程活着且路径安全时下发） |
 | POST | `/login/qr` | 起一个无头扫码进程 |
 | GET | `/gate`、`/memory` | 发送闸剩余冷却 / 记忆占用 |
+| GET | `/memory/overview` | 记忆统计 + 事实 + 待确认 + 最近情节（摘要） |
+| GET | `/memory/search?q=&private=1` | 本机记忆搜索（默认过滤私人；不返回原话） |
+| POST | `/memory/pin` | 事实置顶/取消置顶 |
+| POST | `/memory/pending` | 采纳/忽略待确认事实 |
+| DELETE | `/memory/item?id=` | 删除事实（软删）或情节（原文保留） |
 
 ### 不装 DSH 先看面板
 
@@ -341,7 +353,7 @@ npm run preview          # 打开 http://127.0.0.1:7701
 （gitignored，从 npmmirror 下载）。
 
 ```bash
-npm test                 # 47 项离线断言：安全 / 回读 / 发送闸 / 记忆 / 面板状态 / API 路由
+npm test                 # 离线断言：安全 / 回读 / 发送闸 / 记忆分层与固化 / 召回评测 / 面板 API
 ```
 
 ## 环境要求
@@ -752,6 +764,7 @@ dsh-douyin-whale/
 │   ├── export_login_state.py    # 有头扫码登录 → 写入持久化 profile
 │   ├── login_headless.py        # 无头出二维码（截图给人扫）
 │   ├── run-py.mjs               # npm scripts 里选 .venv 的 Python
+│   ├── memory-eval.mjs          # 记忆召回评测（合成 30 题 / 本机冒烟 / 手写问题集）
 │   ├── panel-preview/           # 不装 DSH 的本地面板预览（模拟宿主）
 │   └── probe_im.py              # DOM 探测（前端改版后对照选择器）
 ├── tests/

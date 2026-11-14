@@ -27,7 +27,7 @@ import { runWatchRound, inWatchWindow, shouldProactiveShare } from '../lib/whale
 import { readDm } from '../lib/dm_reader.js'
 import { applyMoodEvent, applyRoundMood, readMood } from '../lib/mood.js'
 import { petNotify, syncPetSleep } from '../lib/pet_bridge.js'
-import { ensureMemoryLayers, withMemoryLayers } from '../lib/memory_layers.js'
+import { ensureMemoryLayers, seedPreferenceFacts, withMemoryLayers } from '../lib/memory_layers.js'
 import { runConsolidation } from '../lib/memory_consolidate.js'
 import {
   MAX_ATTEMPTS, bumpAttempt, capRepliedIds, mergeQueue, pendingOf,
@@ -105,9 +105,26 @@ function logNewWindows(before, tag) {
   const after = visibleWindows()
   if (!after) return
   const fresh = [...after].filter((w) => !before.has(w))
-  if (fresh.length) {
-    log(`[wake:${tag}] ⚠️ 唤醒期间新窗口: ${fresh.join(' ; ').slice(0, 600)}`)
+  if (!fresh.length) return
+  // 只记进程归属和几个关键 flag，不把命令行原文（可能含任务提示词）写进日志。
+  const pids = fresh.map((w) => w.split('|')[0]).filter((x) => /^\d+$/.test(x))
+  let detail = ''
+  if (pids.length) {
+    try {
+      const ps = `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -in @(${pids.join(',')}) } `
+        + '| ForEach-Object { $f=@(); '
+        + 'if ($_.CommandLine -match "--headless") { $f += "headless" }; '
+        + 'if ($_.CommandLine -match "--user-data-dir") { $f += "user-data-dir" }; '
+        + 'if ($_.CommandLine -match "--remote-debugging-port") { $f += "cdp" }; '
+        + '"$($_.ProcessId)|ppid=$($_.ParentProcessId)|$($_.Name)|$($f -join \',\')" }'
+      const out = execFileSync('powershell', ['-NoProfile', '-Command', ps], {
+        encoding: 'utf8', timeout: 15_000, windowsHide: true,
+      })
+      detail = out.split('\n').map((s) => s.trim()).filter(Boolean).join(' ; ').slice(0, 400)
+    } catch { /* 取证失败不影响唤醒 */ }
   }
+  log(`[wake:${tag}] ⚠️ 唤醒期间新窗口: ${fresh.join(' ; ').slice(0, 600)}`
+    + (detail ? `\n[wake:${tag}] 进程详情: ${detail}` : ''))
 }
 
 function wakeAgent(text, tag = 'wake') {
@@ -214,6 +231,9 @@ async function tick({ manual = false } = {}) {
   }
   // 心情/作息：先让桌宠跟上（到点睡觉/起床），再决定这轮怎么说话
   ensureMemoryLayers({ home: DSH_HOME, nick: ownerNick, log })
+  try { seedPreferenceFacts({ home: DSH_HOME, cfg }) } catch (e) {
+    log(`[memory] 偏好初始化失败（不影响回复）: ${e?.message ?? e}`)
+  }
   const mood = readMood({ file: MOOD_FILE, cfg })
   void syncPetSleep({ view: mood, home: DSH_HOME, cfg, log })
 

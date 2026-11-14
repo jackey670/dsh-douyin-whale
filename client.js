@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 19;
+    const PANEL_BUILD = 20;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -37,6 +37,9 @@ window.__ModuleLoader__.load({
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body || {}),
+    }));
+    const jdel = async (p) => asJson(await fetch(API + p, {
+      method: 'DELETE', credentials: 'same-origin',
     }));
 
     const CSS = `
@@ -113,6 +116,10 @@ window.__ModuleLoader__.load({
 [data-dy2-moodv]{width:30px;flex:none;text-align:right;font-variant-numeric:tabular-nums;
   color:var(--dsw-alias-label-tertiary,#9aa0a6);}
 [data-dy2-textarea]{min-height:104px;resize:vertical;line-height:1.55;}
+[data-dy2-search]{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+[data-dy2-search] [data-dy2-input]{flex:1;min-width:180px;}
+[data-dy2-memlist]{display:flex;flex-direction:column;gap:6px;}
+[data-dy2-item] [data-dy2-btn]{padding:4px 9px;font-size:11px;flex:none;}
 `;
 
     /* ── 错误边界：面板任何一块抛错，都只塌这一页 ─────────────────────── */
@@ -176,15 +183,22 @@ window.__ModuleLoader__.load({
       const [petEnabled, setPetEnabled] = useState(true);
       const [petSleep, setPetSleep] = useState(true);
       const [petMin, setPetMin] = useState(15);
+      const [mem, setMem] = useState(null);
+      const [memQ, setMemQ] = useState('');
+      const [memPrivate, setMemPrivate] = useState(false);
+      const [memResults, setMemResults] = useState(null);
+      const [memBusy, setMemBusy] = useState('');
 
       const load = useCallback(async () => {
         setBusy('load');
         try {
-          const [s, q, c, l] = await Promise.all([
+          const [s, q, c, l, m] = await Promise.all([
             jget('/status'), jget('/queue'), jget('/config'), jget('/login/status'),
+            jget('/memory/overview').catch(() => null),
           ]);
           setData(s);
           setLogin(l);
+          setMem(m);
           setNick(s.owner || '');
           setIntervalMin(s.watch?.intervalMinutes ?? 10);
           setDailyMax(s.watch?.dailyMax ?? 60);
@@ -339,6 +353,73 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
+      const loadMemory = useCallback(async () => {
+        try {
+          setMem(await jget('/memory/overview'));
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        }
+      }, []);
+
+      const searchMem = useCallback(async () => {
+        setMemBusy('search');
+        try {
+          const j = await jget(`/memory/search?q=${encodeURIComponent(memQ)}&private=${memPrivate ? 1 : 0}`);
+          setMemResults(j);
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [memQ, memPrivate]);
+
+      const refreshMemory = useCallback(async () => {
+        await loadMemory();
+        if (memResults) await searchMem();
+      }, [loadMemory, searchMem, memResults]);
+
+      const pinFact = useCallback(async (id, pinned) => {
+        setMemBusy('pin');
+        try {
+          const j = await jpost('/memory/pin', { id, pinned });
+          if (!j.ok) setMsg(j.error || '置顶失败');
+          await refreshMemory();
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [refreshMemory]);
+
+      const deleteMem = useCallback(async (id) => {
+        const okDel = typeof window === 'undefined'
+          || window.confirm('只删除这条记忆摘要，原始私信/日记不会动。确定？');
+        if (!okDel) return;
+        setMemBusy('del');
+        try {
+          const j = await jdel(`/memory/item?id=${encodeURIComponent(id)}`);
+          if (!j.ok) setMsg(j.error || '删除失败');
+          await refreshMemory();
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [refreshMemory]);
+
+      const pendingAct = useCallback(async (id, action) => {
+        setMemBusy('pending');
+        try {
+          const j = await jpost('/memory/pending', { id, action });
+          if (!j.ok) setMsg(j.error || '操作失败');
+          await refreshMemory();
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [refreshMemory]);
+
       const running = data?.daemon?.running === true;
       const gate = data?.gate ?? {};
       const queue = data?.queue ?? {};
@@ -355,6 +436,66 @@ window.__ModuleLoader__.load({
           })),
         h('span', { 'data-dy2-moodv': '' }, Math.round(Number(value) || 0)));
 
+      const memLocked = Boolean(busy) || Boolean(memBusy);
+      const factRow = (f) => h('div', { 'data-dy2-item': '', key: `f:${f.id}` },
+        h('span', { 'data-dy2-badge': f.private ? 'data-warn' : 'data-ok' },
+          f.private ? '私人' : '事实'),
+        h('div', { 'data-dy2-grow': '' },
+          h('div', { 'data-dy2-kv': '' }, f.text),
+          h('div', { 'data-dy2-sub': '' },
+            `${f.category || 'fact'} · 置信 ${Math.round((Number(f.confidence) || 0) * 100)}%`
+            + (f.pinned ? ' · 已置顶' : '')
+            + (f.source === 'config' ? ' · 来自配置' : ''))),
+        h('button', {
+          'data-dy2-btn': '', disabled: memLocked,
+          onClick: () => pinFact(f.id, !f.pinned),
+        }, f.pinned ? '取消置顶' : '置顶'),
+        h('button', {
+          'data-dy2-btn': '', 'data-danger': '', disabled: memLocked,
+          onClick: () => deleteMem(f.id),
+        }, '删除'));
+
+      const episodeRow = (e) => h('div', { 'data-dy2-item': '', key: `e:${e.id}` },
+        h('span', { 'data-dy2-badge': e.private ? 'data-warn' : 'data-ok' },
+          e.private ? '私人' : '情节'),
+        h('div', { 'data-dy2-grow': '' },
+          h('div', { 'data-dy2-kv': '' }, e.summary),
+          h('div', { 'data-dy2-sub': '' },
+            `${fmtWhen(e.ts)} · 重要度 ${e.importance}`
+            + ((e.tags ?? []).length ? ` · ${e.tags.join('/')}` : ''))),
+        h('button', {
+          'data-dy2-btn': '', 'data-danger': '', disabled: memLocked,
+          onClick: () => deleteMem(e.id),
+        }, '删除'));
+
+      const pendingRow = (p) => h('div', { 'data-dy2-item': 'pending', key: `p:${p.id}` },
+        h('span', { 'data-dy2-badge': 'data-warn' }, '待确认'),
+        h('div', { 'data-dy2-grow': '' },
+          h('div', { 'data-dy2-kv': '' }, p.text),
+          h('div', { 'data-dy2-sub': '' },
+            `置信 ${Math.round((Number(p.confidence) || 0) * 100)}% · 采纳后进主人档案`)),
+        h('button', {
+          'data-dy2-btn': '', disabled: memLocked,
+          onClick: () => pendingAct(p.id, 'accept'),
+        }, '采纳'),
+        h('button', {
+          'data-dy2-btn': '', disabled: memLocked,
+          onClick: () => pendingAct(p.id, 'dismiss'),
+        }, '忽略'));
+
+      const memRows = () => {
+        const r = memResults || mem;
+        if (!r) return h('div', { 'data-dy2-empty': '' }, '还没有记忆数据');
+        const facts = r.facts ?? [];
+        const eps = r.episodes ?? [];
+        if (!facts.length && !eps.length) {
+          return h('div', { 'data-dy2-empty': '' },
+            memResults ? '没有匹配的记忆' : '还没有记忆 —— 聊几天之后固化流程会开始积累');
+        }
+        return h('div', { 'data-dy2-memlist': '' },
+          ...facts.map(factRow), ...eps.map(episodeRow));
+      };
+
       return h('div', { 'data-dy2-page': '' },
 
         /* ── 状态 ── */
@@ -363,7 +504,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.14.1·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.14.2·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -644,6 +785,56 @@ window.__ModuleLoader__.load({
               'data-dy2-btn': '', 'data-primary': '', disabled: Boolean(busy),
               onClick: saveConfig,
             }, '保存人设'))),
+
+        /* ── 记忆 ── */
+        h('div', { 'data-dy2-card': '' },
+          h('div', { 'data-dy2-title': '' }, '记忆',
+            mem
+              ? h('span', {
+                'data-dy2-badge': mem.stats?.episodes ? 'data-ok' : 'data-warn',
+              }, `${mem.stats?.episodes ?? 0} 情节 · ${mem.stats?.profile ?? 0} 事实`)
+              : null,
+            (mem?.pending ?? []).length
+              ? h('span', { 'data-dy2-badge': 'data-warn' }, `待确认 ${mem.pending.length}`)
+              : null,
+            h('span', { 'data-dy2-sub': '' }, '本地四层记忆；私人条目默认不进提示词')),
+          mem
+            ? h('div', { 'data-dy2-sub': '' },
+              `索引 ${mem.stats?.terms ?? 0} 词 · 最后固化 ${fmtWhen(mem.stats?.lastConsolidatedAt)}`
+              + ` · ${Math.round((mem.stats?.bytes ?? 0) / 1024)} KB`)
+            : h('div', { 'data-dy2-empty': '' }, '还没有记忆数据'),
+          h('div', { 'data-dy2-search': '' },
+            h('input', {
+              'data-dy2-input': '', value: memQ,
+              placeholder: '搜一条回忆，例如：加班 / 火锅 / 团子',
+              onChange: (e) => setMemQ(e.target.value),
+              onKeyDown: (e) => { if (e.key === 'Enter') searchMem(); },
+            }),
+            h('label', { 'data-dy2-switch': '' },
+              h('input', {
+                type: 'checkbox', checked: memPrivate,
+                onChange: (e) => setMemPrivate(e.target.checked),
+              }),
+              h('span', { 'data-dy2-sub': '' }, '含私人日记')),
+            h('button', {
+              'data-dy2-btn': '', disabled: memLocked, onClick: searchMem,
+            }, '搜索'),
+            memResults
+              ? h('button', {
+                'data-dy2-btn': '', disabled: memLocked, onClick: () => setMemResults(null),
+              }, '清空')
+              : null),
+          !memResults && (mem?.pending ?? []).length
+            ? h('div', null,
+              h('div', { 'data-dy2-label': '' }, `待确认（${mem.pending.length}）`),
+              h('div', { 'data-dy2-memlist': '' }, ...mem.pending.map(pendingRow)))
+            : null,
+          memRows(),
+          memResults
+            ? h('div', { 'data-dy2-sub': '' },
+              `搜索「${memResults.query || '（空）'}」：事实 ${memResults.facts?.length ?? 0} 条 · `
+              + `情节 ${memResults.episodes?.length ?? 0} 条`)
+            : null),
 
         /* ── 队列 ── */
         h('div', { 'data-dy2-card': '' },
