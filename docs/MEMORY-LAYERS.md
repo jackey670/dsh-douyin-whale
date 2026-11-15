@@ -1,8 +1,9 @@
 # 记忆分层设计（Memory Layers）
 
 > 状态：Phase 2A 已实现（v1.14.1）；Phase 3a 评测/面板（v1.14.2）、
-> Phase 3b 周反思（v1.14.3）已做；会话轮换待做。
-> 日期：2026-11-11（v1.14.3 更新于 2026-11-14）
+> Phase 3b 周反思（v1.14.3）、Phase 2B 值班会话轮换（v1.14.4）已做；
+> 真实 DSH 值班宿主还需真机验证。
+> 日期：2026-11-11（v1.14.4 更新于 2026-11-15）
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
 ## 0. 实现进度
@@ -12,7 +13,7 @@
 | Phase 0 埋点 | ✅ 每轮日志只记注入条数/字数；面板状态卡显示「N 情节 · M 事实」；`GET /memory/layers` |
 | Phase 1 四层 + 检索 + 迁移 | ✅ v1.14.0：`lib/memory_layers.js`；真实数据迁移 83 条情节、3035 索引词；两条 tick 都接入 |
 | Phase 2A 记忆固化 | ✅ v1.14.1：`lib/memory_consolidate.js`；证据校验/去重/私人标记；独立调度器已接，值班会话待接 |
-| Phase 2B 会话轮换 | ⬜ 待做（值班会话上下文到阈值时生成交接简报、换新会话） |
+| Phase 2B 会话轮换 | ✅ v1.14.4：`lib/session_rotate.js`；usage/年龄/轮数触发；交接简报；`session-epochs.json`；轮换前跑固化/反思 |
 | Phase 3a 评测 + 面板 | ✅ v1.14.2：`tools/memory-eval.mjs` 30 题；`/memory/overview|search|pin|pending|item`；面板记忆卡；低置信待确认 |
 | Phase 3b 周反思 | ✅ v1.14.3：`lib/memory_reflect.js`；最近 7 天情节 → arcs；私人叙事线默认不注入；面板显示叙事线 |
 | Phase 3c 向量召回 | ⬜ 暂不上：合成集 hit@4 100%，等真实问题集出现缺口再评估 |
@@ -233,19 +234,34 @@ Token 预算（不含任务/persona）：
 ## 7. 会话轮换（解决上下文顶满）
 
 记忆层只解决「提示词里有什么」，不解决值班会话自身上下文越来越长。
+实现见 `lib/session_rotate.js` + `lib/duty_agent.js` 的 `contextInfo/ask/rotate`。
 
-- 估算会话 token：消息字符数 / 1.6 + 工具/系统提示估算；或宿主提供 usage 时直接用。
-- 触发：超过模型窗口 60–70%，或每 7 天，或 200 轮。
-- 交接简报（≤800 token）：
-  - profile 摘要（≤8 条）
-  - 最近 3 条 arc
-  - 8 条高重要度 episodes
+- **用量估算**：优先取会话里最近一条 `assistant/message` 的 `usage`
+  （`inputTokens + cacheRead + cacheWrite`，缺失时 `totalTokens`）；
+  读不到事件就按 `deriveMessages()` 的可见字数 / 1.6 估；窗口取
+  `session.requestContext().contextWindow`。
+- **触发**：窗口占比 ≥ `duty.rotate.contextRatio`（默认 0.7）/ 会话年龄
+  ≥ `maxAgeDays`（7）/ 轮数 ≥ `maxTurns`（200）；任一满足；`enabled=false` 可关。
+- **轮换前**：在旧会话里跑一次固化和周反思（`dutyAgent.ask` 取 JSON 回复），
+  输出留在旧上下文，马上随旧会话丢弃，不会污染新会话。
+- **交接简报**（`buildHandoffBriefing`，≤1400 字）：
+  - profile 公开事实（≤8，置顶优先）
+  - 关系里程碑（≤2）
+  - 最近公开叙事线（≤3）
+  - 高重要度公开情节（≤8，带日期与原话）
+  - 最近 5 句对话
   - 当前 mood
-  - 最近 5 条对话
-- 新建 `douyin-whale-duty-e{N}`，把简报作为首条 followup；旧会话保留归档。
-- `memory/session-epochs.json` 记录 `{epoch, sessionId, startedAt, tokens, episodeCount}`，不记正文。
-- 轮换后第一轮必须完成一次真实送达回读；失败则保留旧会话，手动回退。
-- 待确认：DSH 宿主自己的上下文压缩策略；如果宿主会自动压缩，我们的简报仍需保留，因为要控制「保留什么」。
+- **换会话**：新建 `douyin-whale-duty-e{N}`，简报用
+  `agent.send(msg, 'next-turn', false)` 排进下一轮（不额外唤醒）；旧会话从
+  registry 摘掉、磁盘日志保留。新会话继承 parent/meta，不进工作区侧栏。
+- **状态文件** `memory/session-epochs.json`：只记
+  `{epoch, sessionId, startedAt, rotatedAt, previousSessionId, 用量, reason}` 和
+  最近 10 条 history，不记正文；插件重载后从当前 epoch 继续。
+- **失败处理**：create 失败保留旧会话；`e{N}` 撞 id 会向后试两格；轮换后第一轮
+  仍按原有回读确认，失败则下轮重试。
+- **待真机验证**：DSH 宿主的 `agent.session` 是否稳定暴露
+  `snapshotEvents/requestContext/deriveMessages`；当前生产走独立调度器，
+  值班轮换只用伪造宿主做了离线单测。
 
 ## 8. 迁移
 
@@ -291,7 +307,7 @@ Token 预算（不含任务/persona）：
 - 固化每天 ≤3k token；
 - 200 条合成消息 + 5 次轮换后，早期事实仍能召回；
 - 页面里的注入文本不会变成记忆（安全测试）；
-- 现有 Python 32 + JS 153 测试全绿。
+- 现有 Python 32 + JS 169 测试全绿。
 
 ### 10.1 当前基线（v1.14.2，合成 30 题）
 
@@ -316,13 +332,13 @@ Token 预算（不含任务/persona）：
 | Phase 0 | 埋点：每轮 token、注入记忆 id、面板记忆统计 | 0.5 天 |
 | Phase 1 | 四层文件 + 二元组索引 + `buildMemoryContext` + 迁移 | 2–3 天 |
 | Phase 2A | 夜间固化 + 证据校验 | ✅ v1.14.1 |
-| Phase 2B | 会话轮换简报 | 1–2 天 |
+| Phase 2B | 会话轮换简报 | ✅ v1.14.4 |
 | Phase 3a | 30 题评测 + 面板记忆浏览器 + 待确认 | ✅ v1.14.2 |
 | Phase 3b | 周反思 arcs | ✅ v1.14.3 |
 | Phase 3c | 可选本地向量召回 | ⬜ 暂不上（等真实问题集缺口） |
 
 建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2A，v1.14.2 = Phase 3a，
-v1.14.3 = Phase 3b，v1.14.4 = Phase 2B（会话轮换）。
+v1.14.3 = Phase 3b，v1.14.4 = Phase 2B。下一版先做值班轮换真机验证。
 
 ## 12. 风险与对策
 
@@ -352,10 +368,12 @@ v1.14.3 = Phase 3b，v1.14.4 = Phase 2B（会话轮换）。
 
 ## 14. 开放问题
 
-1. DSH 宿主的上下文窗口和自动压缩策略到底是什么行为？需要先测一次真实会话。
+1. ⚠️ v1.14.4 已按宿主类型定义实现 usage/contextWindow 读取（`requestContext` +
+   `assistant/message.usage`），但还没在真实值班宿主里跑过一次轮换；先观察
+   面板上的 `eN · 占用%` 是否随对话变化。
 2. 私人日记要不要默认进索引？建议进，但只在私人对话/日记任务里召回。
 3. ✅ v1.14.2：高置信度自动进档案，confidence <0.75 进 `profile.pending`，
    面板人工采纳/忽略。
-4. 会话轮换对宿主侧栏/子会话展示的影响，需要真机验证。
+4. ⚠️ 会话轮换后旧会话从 registry 摘掉、磁盘日志保留；宿主侧栏展示需真机确认。
 5. ⏸ 暂不上本地 embedding：v1.14.2 合成集 hit@4 100%、hit@1 85.7%；
    等真实手写问题集出现明显缺口再评估 bge-small-zh / FTS5。

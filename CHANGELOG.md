@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.14.4 — 2026-11-15
+
+值班会话轮换（记忆分层 Phase 2B）：长生命周期会话不再被上下文顶满。
+
+### 新增
+
+- **`lib/session_rotate.js`**：
+  - 上下文用量优先读最近 `assistant/message` 的 usage，读不到按可见消息字数估；
+  - 触发：窗口占比 ≥0.7、会话年龄 ≥7 天、轮数 ≥200（任一满足）；
+  - 交接简报从四层记忆拼：档案 ≤8、里程碑 ≤2、叙事线 ≤3、重要情节 ≤8、
+    最近 5 句、当前状态；≤1400 字，私人事实/日记不进；
+  - `memory/session-epochs.json` 只记 epoch/sessionId/时间/用量，不记正文。
+- **`lib/duty_agent.js`**：新增 `contextInfo()`、`ask()`、`rotate()`。
+  轮换时创建 `douyin-whale-duty-e{N}`，交接简报排进 `next-turn`（不额外唤醒），
+  旧会话从 registry 摘掉、磁盘日志保留；状态文件让插件重载后继续用当前 epoch。
+- **`lib/whale_tick.js`**：投任务前检查轮换。到阈值时**先在旧会话里跑固化/反思**
+  （JSON 输出随旧会话丢弃，不污染新会话），再用最新记忆生成简报换会话。
+- **面板**：`/status` 返回值班会话 epoch/窗口占用，状态卡显示 `eN · 72%`。
+- **配置**：`duty.rotate = { enabled, contextRatio, maxAgeDays, maxTurns }`。
+
+### 说明
+
+- 轮换前的固化/反思是 Phase 2B 的值班路径接入；独立调度器仍按自己的 tick 固化。
+- 旧会话不删除，磁盘日志保留；新会话继承 parent/meta，仍不进工作区侧栏。
+- 纯离线单测覆盖了伪造宿主的生命周期；**真实 DSH 宿主的值班轮换还需真机验证**
+  （当前生产走独立调度器，值班路径未常驻）。
+
+### 验证
+
+- `npm test`：Python 32 + JS 169 全绿；审计项随测试文件增加。
+- 面板预览：`v1.14.4·b22` 正常渲染，无 console 错误。
+- 单测：session_rotate 4（闸门/简报/状态/编排）、duty_agent 11（含轮换/恢复）、
+  panel_api 25（`/status.duty`）。
+
 ## 1.14.3 — 2026-11-14
 
 周反思：把最近 7 天的情节归纳成「最近这几周」的叙事线（记忆分层 Phase 3b）。

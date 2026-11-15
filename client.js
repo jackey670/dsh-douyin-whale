@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 21;
+    const PANEL_BUILD = 22;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -513,7 +513,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.14.3·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.14.4·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -532,7 +532,12 @@ window.__ModuleLoader__.load({
                     : `正常 · ≥${gate.min_interval_s ?? 30}s`)),
                 h('div', { 'data-dy2-stat': '' },
                   h('span', { 'data-dy2-k': '' }, '值班大脑'),
-                  h('span', { 'data-dy2-v': '' }, data.duty_enabled ? '已启用' : '未启用')),
+                  h('span', { 'data-dy2-v': '' }, !data.duty_enabled ? '未启用'
+                    : data.duty?.sessionId
+                      ? `e${data.duty.epoch ?? 1} · ${data.duty.contextWindow
+                        ? `${Math.round((Number(data.duty.ratio) || 0) * 100)}%`
+                        : '就绪'}`
+                      : '已启用')),
                 h('div', { 'data-dy2-stat': '' },
                   h('span', { 'data-dy2-k': '' }, '记忆'),
                   h('span', { 'data-dy2-v': '' },

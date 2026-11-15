@@ -8,6 +8,7 @@
  * the only extra Python is an offset flag for search and a small Playwright
  * bridge that drives the system Edge for login and comment.
  */
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +51,7 @@ export function apply(ctx, config = {}) {
   // 面板的「测试值班会话」按钮用：值班 fiber 就绪后指向真正的 ensure()。
   // 关掉 whaleEnabled 或宿主没有 agents 时保持 null，路由会回 400 说明原因。
   let dutyProbe = null;
+  let dutyStatus = null;
 
   ctx.effect(() => {
     const backend = new Backend(resolved);
@@ -99,6 +101,7 @@ export function apply(ctx, config = {}) {
           dataDir: resolved.dataDir,
           dutyEnabled: resolved.whaleEnabled !== false,
           dutyProbe: () => (typeof dutyProbe === 'function' ? dutyProbe() : null),
+          dutyStatus: () => (typeof dutyStatus === 'function' ? dutyStatus() : null),
         });
         webCtx.effect(() => webServer.register({
           kind: 'prefix',
@@ -154,6 +157,8 @@ export function apply(ctx, config = {}) {
             ctx: agentCtx,
             log: dutyLog,
             sessionId: 'douyin-whale-duty-v2',
+            sessionStateFile: join(process.env.DSH_HOME || join(homedir(), '.dsh'),
+              'memory', 'session-epochs.json'),
             cwd: resolved.dataDir || join(ROOT, 'data'),
             // 值班会话模型路由：配置了 duty.provider/duty.model 就用它们
             // （pi-ai 自定义网关），否则跟随宿主默认。
@@ -166,6 +171,9 @@ export function apply(ctx, config = {}) {
           const tick = createWhaleTick({
             log: dutyLog, dutyAgent, root: ROOT, dataDir: resolved.dataDir,
           });
+          dutyStatus = () => {
+            try { return dutyAgent.contextInfo(); } catch { return null; }
+          };
           // 面板自检：只拉会话（get/resume/create），不投任务、不发私信。
           // 20 秒超时兜底，避免 agents.create 卡住 HTTP 请求。
           dutyProbe = async () => {
@@ -178,13 +186,13 @@ export function apply(ctx, config = {}) {
                 return { ok: false, error: '值班会话创建超时（20s）——看插件日志确认 agents.create 卡在哪' };
               }
               return handle
-                ? { ok: true, sessionId: 'douyin-whale-duty-v2', note: '值班会话已就绪' }
+                ? { ok: true, sessionId: dutyAgent.sessionId, note: '值班会话已就绪' }
                 : { ok: false, error: '值班会话没拉起来（宿主 agents 不可用或 create 失败，详见插件日志）' };
             } catch (e) {
               return { ok: false, error: String(e?.message ?? e) };
             }
           };
-          agentCtx.effect(() => () => { dutyProbe = null; }, 'douyin-whale: duty probe');
+          agentCtx.effect(() => () => { dutyProbe = null; dutyStatus = null; }, 'douyin-whale: duty probe');
           agentCtx.effect(() => {
             let disposed = false;
             let timer = null;

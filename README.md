@@ -204,6 +204,7 @@ node scheduler/scheduler.mjs --memory-reflect
 | `whale-mood.json` | 精力 / 想念 / 无聊、上次互动时间、作息中的睡眠标记 |
 | `whale-pet-state.json` | 桌宠气泡限流时间、睡觉状态（没装桌宠就不生成） |
 | `memory/episodes.jsonl` / `profile.json` / `arcs.json` / `index.json` | 分层长期记忆：情节、稳定事实、叙事线、检索索引（v1.14.0–v1.14.3） |
+| `memory/session-epochs.json` | 值班会话轮换 epoch、sessionId、用量（v1.14.4，不记正文） |
 | `douyin-whale-scheduler.log` | 运行日志 |
 | `memory/dm-<昵称>.json` | 每位联系人的对话记忆（只存本机，不进仓库和日志） |
 | `whale-diary.md` / `whale-diary-private.md` | 公开 / 私人日记 |
@@ -247,11 +248,17 @@ node scheduler/scheduler.mjs --memory-reflect
 至少 5 条情节；引用私人日记的叙事线标 private，默认不注入。手动：
 `node scheduler/scheduler.mjs --stop` 后跑 `--memory-reflect`。
 
+**值班会话轮换（v1.14.4）**：窗口占用 ≥70%、会话满 7 天、200 轮，任一条件触发。
+轮换前先在旧会话里跑一次固化和周反思（输出随旧会话丢弃），再用四层记忆生成
+≤1400 字交接简报，新建 `douyin-whale-duty-eN`；旧会话磁盘日志保留。
+`memory/session-epochs.json` 只记 epoch/sessionId/用量，不记正文；面板状态卡
+显示 `eN · 72%`。配置项 `duty.rotate` 可调阈值或关闭。
+
 ### 值班大脑（发布版，不依赖 ZCode）
 
-插件里有一条**常驻值班会话**（DSH 宿主的 agents 服务，会话 id 固定为
-`douyin-whale-duty-v2`）：装载后 15 秒跑第一轮，之后按配置间隔轮询。
-模型和上下文由宿主管，插件只负责投任务、收结果、回读确认。
+插件里有一条**常驻值班会话**（DSH 宿主的 agents 服务，初始会话 id
+`douyin-whale-duty-v2`，轮换后为 `douyin-whale-duty-eN`）：装载后 15 秒跑第一轮，
+之后按配置间隔轮询。模型和上下文由宿主管，插件只负责投任务、收结果、回读确认。
 
 **模型路由**：值班会话默认跟随宿主的默认模型（`dsh-agent-default-model`）。换模型有两种选择：
 
@@ -754,6 +761,7 @@ dsh-douyin-whale/
 │   ├── memory_layers.js         # 四层记忆：迁移、索引、检索、预算注入
 │   ├── memory_consolidate.js    # 记忆固化：新素材 → facts/episodes（证据校验）
 │   ├── memory_reflect.js        # 周反思：最近 7 天情节 → 叙事线（arcs）
+│   ├── session_rotate.js        # 值班会话轮换：用量闸门 + 交接简报 + epoch 状态
 │   └── normalize.js             # 响应归一化（缺失即 null）
 ├── scheduler/
 │   ├── scheduler.mjs            # 定时看私信 → 唤醒 agent → 回读确认

@@ -41,6 +41,14 @@
     "sleepEnabled": true,
     "minIntervalMinutes": 15
   },
+  "duty": {
+    "rotate": {
+      "enabled": true,
+      "contextRatio": 0.7,
+      "maxAgeDays": 7,
+      "maxTurns": 200
+    }
+  },
   "memory": {
     "consolidate": {
       "enabled": true,

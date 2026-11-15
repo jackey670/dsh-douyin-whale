@@ -64,7 +64,7 @@
 | F1 方案设计 | ✅ **11-11**：工作/情节/语义/反思四层 + 字符二元组索引 + 每日固化 + 会话轮换；含数据模型、验收指标、风险 |
 | F2 Phase 1 实现 | ✅ **11-11 v1.14.0**：`lib/memory_layers.js`（profile/episodes/arcs/index/meta）+ 字符二元组索引 + `buildMemoryContext` + 迁移；真实数据 83 条情节/3035 索引词；两条 tick 已接入，私人日记默认不注入 |
 | F3a 记忆固化 | ✅ **11-12 v1.14.1**：`lib/memory_consolidate.js`——新私信/日记 → facts/episodes；证据必须对上原话，私人日记标 private；独立调度器已接，真实 3 条素材 → 1 条情节 |
-| F3b 会话轮换 | ⬜ 待开工：值班会话上下文到阈值时生成交接简报、换新会话；DSH 值班路径的固化也要接 |
+| F3b 会话轮换 | ✅ **11-15 v1.14.4**：`lib/session_rotate.js` + duty_agent `contextInfo/ask/rotate`——usage/7 天/200 轮触发；轮换前跑固化/反思；≤1400 字交接简报；`memory/session-epochs.json`；面板显示 eN·占用%。伪造宿主单测过，**真实 DSH 值班宿主待验证** |
 | F3c 评测 + 面板 | ✅ **11-14 v1.14.2**：`tools/memory-eval.mjs` 30 题（hit@1 85.7% / hit@4 100%）；面板记忆卡 + overview/search/pin/pending/delete；低置信事实进待确认；配置偏好初始化置顶事实 |
 | F4 Phase 3b | ✅ **11-14 v1.14.3**：`lib/memory_reflect.js`——最近 7 天情节 → 1–2 条叙事线；私人叙事线默认不注入；【最近这几周】注入 + 面板展示；真机 6 条情节 → 1 条 arc |
 | F5 Phase 3c | ⬜ 暂不上向量召回：合成集 hit@4 100%，等真实问题集出现缺口再评估 |
