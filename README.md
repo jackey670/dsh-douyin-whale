@@ -282,11 +282,18 @@ npm run memory:export -- --verify            # 克隆远端逐文件比对 sha25
   不写进配置文件。**模型条目务必声明 `input: [text, image]`**——缺省=纯文本，
   工具结果里的图片会被请求投影层丢掉。
 
+**侧栏显隐**：值班会话默认**不进 DSH 侧栏**（创建时带 `origin=subagent`，
+宿主侧栏的唯一隐藏开关，持久化、重启后依然隐藏）。想看会话本体就在面板
+「设置 → 值班会话 → 值班会话在侧栏可见」打开开关——改完保存，下次轮换/重启
+拉起的新会话按新设置走，当前会话不变。轮换细节见
+[docs/DUTY-ROTATE-VERIFY.md](docs/DUTY-ROTATE-VERIFY.md)。
+
 ```yaml
 # 插件配置（可选）：留空 = 跟随宿主默认模型
 duty:
   provider: <pi-ai 路由名>
   model: <模型 id>
+  sessionVisible: false   # 值班会话是否出现在 DSH 侧栏（默认隐藏）
 ```
 
 ```yaml

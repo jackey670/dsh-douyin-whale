@@ -183,6 +183,7 @@ window.__ModuleLoader__.load({
       const [petEnabled, setPetEnabled] = useState(true);
       const [petSleep, setPetSleep] = useState(true);
       const [petMin, setPetMin] = useState(15);
+      const [dutyVisible, setDutyVisible] = useState(false);
       const [mem, setMem] = useState(null);
       const [memQ, setMemQ] = useState('');
       const [memPrivate, setMemPrivate] = useState(false);
@@ -221,6 +222,7 @@ window.__ModuleLoader__.load({
           setPetEnabled(cc.pet?.enabled !== false);
           setPetSleep(cc.pet?.sleepEnabled !== false);
           setPetMin(cc.pet?.minIntervalMinutes ?? 15);
+          setDutyVisible(cc.duty?.sessionVisible === true);
           setMsg('');
         } catch (e) {
           setMsg(String(e?.message ?? e));
@@ -293,6 +295,7 @@ window.__ModuleLoader__.load({
               sleepEnabled: petSleep,
               minIntervalMinutes: petMin,
             },
+            duty: { sessionVisible: dutyVisible },
           });
           if (j.ok) setMsg('配置已保存（下个 tick 生效）');
           else setMsg(j.error || '保存失败');
@@ -303,7 +306,7 @@ window.__ModuleLoader__.load({
         }
       }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax,
         shareEnabled, sharePct, shareMax, shareMin, personaText,
-        moodEnabled, sleepStart, sleepEnd, petEnabled, petSleep, petMin]);
+        moodEnabled, sleepStart, sleepEnd, petEnabled, petSleep, petMin, dutyVisible]);
 
       const schedulerAct = useCallback(async (action) => {
         setBusy(action);
@@ -513,7 +516,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.14.6·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.14.7·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -720,6 +723,19 @@ window.__ModuleLoader__.load({
                 }),
                 h('span', { 'data-dy2-unit': '' }, '分钟')),
               h('div', { 'data-dy2-hint': '' }, '5–1440；两次尝试至少隔这么久，压住 token 消耗。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
+              h('div', { 'data-dy2-grouplabel': '' }, '值班会话 —— 侧栏显隐')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: dutyVisible,
+                  onChange: (e) => setDutyVisible(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '值班会话在侧栏可见'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '默认关闭：值班会话不占侧栏对话框，每次轮换也不会多出新框。'
+                    + '改完保存，下次轮换/重启拉起的新会话按新设置走，当前会话不变。')))),
             h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
               h('div', { 'data-dy2-grouplabel': '' }, '状态与桌宠 —— 心情、作息、桌面反馈')),
             h('div', { 'data-dy2-field': '', 'data-wide': '' },

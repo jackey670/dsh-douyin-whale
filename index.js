@@ -165,6 +165,12 @@ export function apply(ctx, config = {}) {
             modelSelection: (resolved.dutyProvider && resolved.dutyModel)
               ? { provider: resolved.dutyProvider, model: resolved.dutyModel }
               : null,
+            // 侧栏显隐：每次真正创建会话（首次/轮换）时读一遍面板配置，
+            // 开关改完不用重启，下次轮换的新会话就按新值来。
+            sidebarVisible: () => {
+              try { return readConfig().duty?.sessionVisible === true; }
+              catch { return false; }
+            },
             // 人设已内置在 lib/duty_agent.js 的 DEFAULT_SYSTEM_PROMPT 里；
             // 需要个性化时读 ~/.dsh 配置再拼 personaText 即可。
           });

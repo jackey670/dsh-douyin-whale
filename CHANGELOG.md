@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.14.7 — 2026-11-22
+
+值班会话侧栏显隐开关（面板设置，默认隐藏）。
+
+### 新增
+
+- **面板「设置 → 值班会话 → 值班会话在侧栏可见」**：勾选后值班会话正常出现在
+  DSH 侧栏；默认关闭（隐藏）。落盘为 `duty.sessionVisible`（默认 `false`）。
+- **`duty_agent.js`**：`sidebarVisible` 参数支持布尔或函数——函数形态每次真正
+  创建会话（首次/轮换）时现读面板配置，**开关改完不用重启**，下次轮换的
+  新会话就按新值走；读不到配置时兜底隐藏。
+- `origin=subagent` 与 `delegationDepth` 成对出现/成对消失（宿主 header
+  一致性校验要求）；`parentSession` 仍只在借到 parent 时写。
+
+### 说明
+
+- 开关只影响**之后创建的会话**：resume 不改 header，当前会话与已落盘的
+  旧会话（v1/v2/e2）不变——想清理旧框在侧栏手动归档。
+- 隐藏机制不变（v1.14.6）：宿主 `sessionVisible()` 按 `origin === 'subagent'`
+  过滤，持久化在 SessionHeader。
+
+### 验证
+
+- duty_agent 15 项（+4：③c 布尔/函数不写 origin、getter 抛错兜底隐藏、
+  无 parent 自隐藏日志文案）；panel_api 26 项（+1：`duty.sessionVisible`
+  开关落盘、deep merge 不覆盖 `duty.rotate`、非布尔拒绝）。
+
 ## 1.14.6 — 2026-11-22
 
 值班会话不再出现在 DSH 侧栏。
