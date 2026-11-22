@@ -57,6 +57,12 @@ if (!fs.existsSync(paths.state)) {
         kind: 'video', seen_at: '2026-10-25T05:00:00.000Z' },
       { item_id: '7700456302291586347', title: '发几张Q版角色三视图和成体四视图。',
         kind: 'note', seen_at: '2026-10-25T06:00:00.000Z' },
+      { item_id: '7700999000000000001', title: '测试占位第七条：验证队列收起展开',
+        kind: 'text', seen_at: '2026-10-25T07:00:00.000Z' },
+      { item_id: '7700999000000000002', title: '测试占位第八条：展开后才能看到我',
+        kind: 'text', seen_at: '2026-10-25T08:00:00.000Z' },
+      { item_id: '7700999000000000003', title: '测试占位第九条：展开后才能看到我',
+        kind: 'text', seen_at: '2026-10-25T09:00:00.000Z' },
     ],
     loginFails: 0,
   }, null, 2));

@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 22;
+    const PANEL_BUILD = 23;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -189,6 +189,8 @@ window.__ModuleLoader__.load({
       const [memPrivate, setMemPrivate] = useState(false);
       const [memResults, setMemResults] = useState(null);
       const [memBusy, setMemBusy] = useState('');
+      // 内容队列默认只展开最近几条；「展开全部」按钮切完整列表
+      const [queueOpen, setQueueOpen] = useState(false);
 
       const load = useCallback(async () => {
         setBusy('load');
@@ -426,6 +428,10 @@ window.__ModuleLoader__.load({
       const running = data?.daemon?.running === true;
       const gate = data?.gate ?? {};
       const queue = data?.queue ?? {};
+      // 内容队列收起时只展示最近 5 条；按钮切完整列表（queueOpen）
+      const queueItems = queue.items ?? [];
+      const queueShown = (queueOpen ? queueItems : queueItems.slice(-5))
+        .slice().reverse();                    // 旧→新 存，渲染成 新→旧
       const mood = data?.mood ?? null;
       const moodBar = (label, value, color) => h('div', { 'data-dy2-moodrow': '' },
         h('span', { 'data-dy2-moodk': '' }, label),
@@ -516,7 +522,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.14.7·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.14.8·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -875,11 +881,18 @@ window.__ModuleLoader__.load({
         /* ── 队列 ── */
         h('div', { 'data-dy2-card': '' },
           h('div', { 'data-dy2-title': '' }, '内容队列',
-            h('span', { 'data-dy2-sub': '' }, '旧 → 新；已回复的不再处理')),
-          !(queue.items ?? []).length
+            h('span', { 'data-dy2-sub': '' },
+              (queueOpen ? '' : queueItems.length > 5 ? '最近 5 条 · ' : '')
+              + '旧 → 新；已回复的不再处理'),
+            queueItems.length > 5
+              ? h('button', { 'data-dy2-btn': '',
+                onClick: () => setQueueOpen(!queueOpen),
+              }, queueOpen ? '收起' : `展开全部 ${queueItems.length} 条`)
+              : null),
+          !queueItems.length
             ? h('div', { 'data-dy2-empty': '' }, '队列为空 —— 主人发视频或文字之后这里会出现')
             : h('div', { 'data-dy2-inner': '' },
-              ...queue.items.slice().reverse().map((it) => h('div', {
+              ...queueShown.map((it) => h('div', {
                 'data-dy2-item': it.status === 'replied' ? 'done'
                   : it.status === 'failed' ? 'failed' : 'pending',
                 key: it.id || it.item_id },
