@@ -265,6 +265,11 @@ Token 预算（不含任务/persona）：
 
 ## 8. 迁移
 
+跨机迁移/备份用 `tools/memory-export.mjs`（v1.14.5）：
+`--export` 出 staging + manifest（每文件 sha256），`--push` 推私有仓
+（GitCode `dsh-douyin-whale-memory`，含历史、禁 GitHub），`--verify` 克隆比对；
+排除 `consolidate.lock` / `session-epochs.json` / `*.tmp`。
+
 1. 读现有 `dm-<昵称>.json` 的 80 条消息：
    - 按天分组，每天生成 1 条 episode（summary 由规则截取，不调模型），evidence 保留原话；
    - `importance` 默认 2，视频/表情事件 2，纯寒暄 1。

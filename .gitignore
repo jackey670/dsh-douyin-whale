@@ -49,3 +49,4 @@ data/panel-preview-home/
 memory/
 dm-*.json
 whale-chat-session.json
+pytest-of-*/

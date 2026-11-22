@@ -252,7 +252,21 @@ node scheduler/scheduler.mjs --memory-reflect
 轮换前先在旧会话里跑一次固化和周反思（输出随旧会话丢弃），再用四层记忆生成
 ≤1400 字交接简报，新建 `douyin-whale-duty-eN`；旧会话磁盘日志保留。
 `memory/session-epochs.json` 只记 epoch/sessionId/用量，不记正文；面板状态卡
-显示 `eN · 72%`。配置项 `duty.rotate` 可调阈值或关闭。
+显示 `eN · 72%`。配置项 `duty.rotate` 可调阈值或关闭。真机开关/观察/回滚清单见
+[`docs/DUTY-ROTATE-VERIFY.md`](docs/DUTY-ROTATE-VERIFY.md)。
+
+**记忆备份/迁移（v1.14.5）**：记忆含私人对话与日记，只能进**私有仓库**
+（默认 GitCode `dsh-douyin-whale-memory`，不碰 GitHub）：
+
+```bash
+npm run memory:export -- --export            # 导出到临时 staging + manifest(sha256)
+npm run memory:export -- --push              # 导出 → 克隆私有仓 → 整树替换 → commit+push
+npm run memory:export -- --verify            # 克隆远端逐文件比对 sha256
+```
+
+导出清单固定为 `memory/`（不含 `consolidate.lock`/`session-epochs.json`）+
+两本日记 + `whale-mood.json`；`manifest.json` 支持恢复后逐字节校验。
+换机步骤见私有仓库里的 README。
 
 ### 值班大脑（发布版，不依赖 ZCode）
 
@@ -781,6 +795,7 @@ dsh-douyin-whale/
 │   ├── login_headless.py        # 无头出二维码（截图给人扫）
 │   ├── run-py.mjs               # npm scripts 里选 .venv 的 Python
 │   ├── memory-eval.mjs          # 记忆召回评测（合成 30 题 / 本机冒烟 / 手写问题集）
+│   ├── memory-export.mjs        # 记忆备份/迁移到私有仓库（export/push/verify）
 │   ├── panel-preview/           # 不装 DSH 的本地面板预览（模拟宿主）
 │   └── probe_im.py              # DOM 探测（前端改版后对照选择器）
 ├── tests/

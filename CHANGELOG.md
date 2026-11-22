@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.14.5 — 2026-11-22
+
+记忆迁移闭环（memory-export 工具）+ 值班轮换真机验证（R1/R2）。
+
+### 新增
+
+- **`tools/memory-export.mjs`**（记忆备份/迁移，手动命令）：
+  - `--export`：从 `~/.dsh` 导出四层记忆 + DM 记忆 + 日记 + 心情到 staging，
+    固定清单、排除锁文件/临时文件，生成 `manifest.json`（sha256 + 条数统计）与 `README.md`（恢复步骤）；
+  - `--push`：clone 增量推送到私有仓库（默认 `gitcode.com/uzibuxing/dsh-douyin-whale-memory`，
+    保留历史；内容没变不产生空 commit；凭据走 git credential helper，不嵌 token）；
+  - `--verify`：clone 回来逐文件比对 sha256/bytes，输出 `{files, bad, counts}`；
+  - `.gitattributes * -text` 禁换行转换，字节级保真；拒绝把导出目录放进 `.git` 相关路径；
+  - 只推 GitCode 私有仓；**记忆不上 GitHub、不进公开仓库**。
+  - `npm run memory:export -- --export|--push|--verify`。
+- **`docs/DUTY-ROTATE-VERIFY.md`**：值班轮换真机验证手册（开关流程、观察点、
+  已知风险、回滚步骤、验证记录）。
+- **配置**：`duty.rotate.contextWindowFallback`（默认 1M）——宿主在首轮模型请求前
+  不报 `contextWindow`，兜底算占用率；宿主上报后以宿主为准。
+
+### 修复（真机验证中发现）
+
+- **awaitIdle 排队竞态**：send 进正在 running 的会话只是排队，旧判定立刻读到
+  上一轮的空闲（1 秒收轮、回读必失败）→ 改为「消息数基线 + sawRunning」；
+  排队场景先等上一轮跑完再计时。
+- **dm_reader 空输出诊断**：失败日志带 stderr 尾部（定位到 360 拦 venv python 写 %TEMP%）。
+- **whale_tick 测试兼容 360 环境**：子进程 python 改走 PATH（venv python 被 360 拦写 %TEMP%）。
+
+### 真机验证（DSH NEXT 2.0.24-next / dsh 0.2.2-rc.5，2026-11-22）
+
+轮换全链路在真宿主跑通（详见 `docs/DUTY-ROTATE-VERIFY.md` §5）：
+
+- `轮换 douyin-whale-duty-v2 → douyin-whale-duty-e2（usage）`，
+  `session-epochs.json` epoch 2 + history，面板状态卡同步；
+- 新会话接真实私信：工具调用 → dm_send → 回读「已确认送达（回复 31 字）」，无重发；
+- `contextInfo` usage 数据源有效（used/turns/messages），contextWindow 首轮请求后宿主上报。
+- 已知现象（挂起，回读机制兜住）：GLM max-effort 在 dm_send 后仍长时间生成，
+  回合以 900s 超时收尾；分享面板只列「最近分享过的人」，主人不在面板时分享轮诚实放弃。
+- 部署注意：360 拦 venv python 写 %TEMP%（启动器 TEMP/TMP 指到仓库 `data\tmp` 绕行）；
+  独立调度器与插件值班写同一份状态，**不能同时开**。
+
+### 验证
+
+- `npm run check` + `npm test` 全绿（新增 memory-export 5 项；MRR 0.929）。
+- memory-export dogfood：本机 → 私有仓 push + verify PASS（commit 0f75f92）。
+- 回滚后确认 `duty disabled`，机器回到「只开发」姿态；生产在笔记本。
+
 ## 1.14.4 — 2026-11-15
 
 值班会话轮换（记忆分层 Phase 2B）：长生命周期会话不再被上下文顶满。
