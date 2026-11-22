@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.14.6 — 2026-11-22
+
+值班会话不再出现在 DSH 侧栏。
+
+### 修复
+
+- **侧栏漏出对话框**（桌面版用户可见）：每次值班轮换/重启都会在侧栏多一个会话。
+  根因：`origin: 'subagent'`（宿主侧栏唯一的隐藏开关，持久化在 SessionHeader）之前
+  只在「借到 parent agent」时才写——DSH NEXT 桌面版平时没有 root 会话可借，于是
+  退化成顶层会话进侧栏。现在无论有无 parent 都写 `origin=subagent` + `delegationDepth 1`
+  （宿主 types 明确 origin 是「Navigation classification only」，不影响运行时行为）；
+  `parentSession` 仍只在真借到 parent 时写。
+- 修复前已创建的会话（v1/v2/e2）不受影响——resume 不改 header，想清理可在侧栏
+  手动归档（会话已退役，归档安全）。
+
+### 验证
+
+- duty_agent 单测 +1（③b 无 parent 也写 origin=subagent），12 项全绿；全套 Python + JS 通过。
+- 宿主侧依据：`dsh-client-ui-workspace/src/client/tree.ts` `sessionVisible()` 按
+  `origin === 'subagent'` 过滤（树/平铺/搜索三条路径）；归档不可用作隐藏
+  （ArchivedSessionGate 会拒绝归档会话的模型步骤）。
+
 ## 1.14.5 — 2026-11-22
 
 记忆迁移闭环（memory-export 工具）+ 值班轮换真机验证（R1/R2）。
