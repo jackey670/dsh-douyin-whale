@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.14.9 — 2026-11-26
+
+值班回合收尾优化（R8）：确认发送后不再空等 15 分钟。
+
+### 修复
+
+- **awaitIdle 的「消息数基线」是死代码**：v1.14.5 的 `send()` 只在返回值里带
+  `messageCountBefore/runningNow`，从未写回模块状态 → `awaitIdle` 拿不到基线，
+  只要 agent 跑起来就必然等满 `idleMs` 15 分钟才超时（11-22 真机日志里的 900s
+  「超时」即此）。现在 `send()` 写回 `lastSendInfo`，回合正常跑完即可收轮。
+
+### 新增
+
+- **确认发送后提前收轮**：`shouldEndRoundEarly()`（纯函数）+ `awaitIdle({ earlyExit })`。
+  回复标记 `sent:true` 且过了宽限期（默认 8 秒）就收轮，不再等模型生成收尾长文。
+  排队轮（send 时上一轮还在跑）不启用，避免把上一轮的发送记到本轮。
+- **封存标记防重复发送**：`sealReplyMarker()` + `markerBlocksSend()`。提前收轮时
+  不删标记而是封存（默认 15 分钟），闸门继续拦 agent 追加发送；封存到期自动放行，
+  手动发送不受长期影响。`douyin.mjs` 三处发送闸统一改用 `markerBlocksSend`。
+- **busy-skip**：值班 tick 发现上一轮还在跑时直接跳过（不排队），避免回复标记
+  被下一轮重置、旧轮次的发送被记到新条目。
+- **finally 兜底**：`runWatchRound` 的标记 begin→end 包 try/finally，dispatch/
+  awaitIdle/回读抛错时不再残留标记。
+- 配置：`duty.earlyExit = { enabled: true, graceMs: 8000, sealMs: 900000 }`。
+
+### 验证
+
+- duty_agent 16（+5：基线/queued 刷新/earlyExit 命中/抛错/queued 禁用）、
+  whale_round 14（+4：纯函数六分支/提前收轮封存/普通删除/finally 清理）、
+  whale_tick 14（+2：busy-skip/透传 earlyExit）、send_gate 6（+2：封存期内拒、
+  封存过期放行，端到端走 douyin.mjs）。
+- 全套 Python + JS 19 组全绿。
+- **真机验证延后**：笔记本在跑生产，本轮只在开发机跑单测；下次双机切换时
+  按 `docs/DUTY-ROTATE-VERIFY.md` 复核「确认发送提前收轮」日志。
+
 ## 1.14.8 — 2026-11-22
 
 内容队列默认收起，面板不再被几十条队列刷穿。

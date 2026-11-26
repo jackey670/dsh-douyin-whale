@@ -32,7 +32,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-import { markReplySent, readReplyMarker } from './lib/reply_marker.js';
+import { markReplySent, markerBlocksSend, readReplyMarker } from './lib/reply_marker.js';
 import { listPacks, pickMeme, searchMemes } from './lib/meme.js';
 
 import {
@@ -271,7 +271,7 @@ async function run() {
       // 调度器模式：一轮只允许发一条。已经发过就直接拒绝，
       // 避免 agent 顺着对话多回几条，把回复顺序和对象都搅乱。
       const marker = reallySend ? readReplyMarker() : null;
-      if (marker?.sent) {
+      if (markerBlocksSend(marker)) {
         return fail('本轮已经发过一条私信（调度器限制：每条内容只回一次）', {
           item_id: marker.item_id,
         });
@@ -360,7 +360,7 @@ async function run() {
 
       // 调度器/值班模式：一轮只发一条。视频分享和文字/表情共用同一个标记。
       const marker = reallySend ? readReplyMarker() : null;
-      if (marker?.sent) {
+      if (markerBlocksSend(marker)) {
         return fail('本轮已经发过一条私信（调度器限制：每条内容只回一次）', {
           item_id: marker.item_id,
         });
@@ -404,7 +404,7 @@ async function run() {
       const reallySend = sub === 'send' && options.send === true;
       // 调度器/值班模式：一轮只发一条。表情和文字/贴图共用同一个标记。
       const marker = reallySend ? readReplyMarker() : null;
-      if (marker?.sent) {
+      if (markerBlocksSend(marker)) {
         return fail('本轮已经发过一条私信（调度器限制：每条内容只回一次）', {
           item_id: marker.item_id,
         });

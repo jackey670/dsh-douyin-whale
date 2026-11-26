@@ -288,6 +288,10 @@ npm run memory:export -- --verify            # 克隆远端逐文件比对 sha25
 拉起的新会话按新设置走，当前会话不变。轮换细节见
 [docs/DUTY-ROTATE-VERIFY.md](docs/DUTY-ROTATE-VERIFY.md)。
 
+**回合收尾**：私信确认发出后按 `duty.earlyExit` 提前收轮（默认 8 秒宽限期），
+不再等模型把收尾长文生成完（真机上这段能烧十几分钟）。提前收轮会封存回复标记，
+防止 agent 追加发送；封存到期自动放行。上一轮还在跑时 tick 直接跳过、不排队。
+
 ```yaml
 # 插件配置（可选）：留空 = 跟随宿主默认模型
 duty:

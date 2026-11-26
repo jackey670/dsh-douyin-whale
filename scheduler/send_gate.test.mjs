@@ -126,6 +126,40 @@ try {
     ok('④ --image 透传 + 标记记 image');
   }
 
+  // ⑤ 封存标记（提前收轮）：封存期内第二条仍被拒
+  {
+    fs.writeFileSync(markerFile, JSON.stringify({
+      wake_id: 'wake-seal',
+      item_id: 'V2',
+      kind: 'video',
+      sent: true,
+      text: '已发出',
+      image: false,
+      video: '',
+      emoji: false,
+      sent_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+      sealed_until: new Date(Date.now() + 5 * 60_000).toISOString(),
+    }), 'utf8');
+    const r = send('封存期内追加的一条');
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /本轮已经发过一条私信/);
+    assert.equal(calls(), 5, '封存期内的发送不应调用 Python');
+    ok('⑤ 封存期内第二条被拒绝');
+  }
+
+  // ⑥ 封存过期后放行（sent 仍 true，但封存期已过）
+  {
+    const m = marker();
+    m.sealed_until = '2020-01-01T00:00:00.000Z';
+    fs.writeFileSync(markerFile, JSON.stringify(m), 'utf8');
+    const r = send('封存过期后的手动消息');
+    assert.equal(r.status, 0);
+    assert.equal(calls(), 6);
+    fs.rmSync(markerFile, { force: true });
+    ok('⑥ 封存过期后放行');
+  }
+
   console.log(`\nALL PASSED (${pass})`);
 } finally {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
