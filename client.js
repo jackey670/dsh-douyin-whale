@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 23;
+    const PANEL_BUILD = 24;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -120,6 +120,9 @@ window.__ModuleLoader__.load({
 [data-dy2-search] [data-dy2-input]{flex:1;min-width:180px;}
 [data-dy2-memlist]{display:flex;flex-direction:column;gap:6px;}
 [data-dy2-item] [data-dy2-btn]{padding:4px 9px;font-size:11px;flex:none;}
+[data-dy2-quote-block]{margin-top:6px;padding:6px 9px;border-left:2px solid var(--dsw-alias-border-strong,rgba(128,128,128,.45));
+  border-radius:4px;background:var(--dsw-alias-bg-secondary,rgba(128,128,128,.07));}
+[data-dy2-quote]{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#b6bac0);margin:2px 0;}
 `;
 
     /* ── 错误边界：面板任何一块抛错，都只塌这一页 ─────────────────────── */
@@ -189,6 +192,8 @@ window.__ModuleLoader__.load({
       const [memPrivate, setMemPrivate] = useState(false);
       const [memResults, setMemResults] = useState(null);
       const [memBusy, setMemBusy] = useState('');
+      const [memDetail, setMemDetail] = useState(null);   // { id, episode } 展开的原话
+      const [memSel, setMemSel] = useState([]);           // 待确认批量选择
       // 内容队列默认只展开最近几条；「展开全部」按钮切完整列表
       const [queueOpen, setQueueOpen] = useState(false);
 
@@ -425,6 +430,53 @@ window.__ModuleLoader__.load({
         }
       }, [refreshMemory]);
 
+      const pendingBatch = useCallback(async (action) => {
+        const ids = memSel;
+        if (!ids.length) return;
+        if (action === 'dismiss' && typeof window !== 'undefined'
+          && !window.confirm(`忽略 ${ids.length} 条待确认事实？`)) return;
+        setMemBusy('pending');
+        try {
+          const j = await jpost('/memory/pending/batch', { ids, action });
+          if (!j.ok) setMsg(j.error || '批量操作失败');
+          else if ((j.missing ?? []).length) {
+            setMsg(`${(j.resolved ?? []).length} 条已处理，${j.missing.length} 条已不存在`);
+          }
+          setMemSel([]);
+          await refreshMemory();
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [memSel, refreshMemory]);
+
+      const toggleMemSel = (id) => setMemSel((cur) => (cur.includes(id)
+        ? cur.filter((x) => x !== id) : [...cur, id]));
+
+      const toggleAllMemSel = (ids) => setMemSel((cur) => (ids.every((id) => cur.includes(id))
+        ? cur.filter((id) => !ids.includes(id))
+        : [...new Set([...cur, ...ids])]));
+
+      /** 情节「看原话」：再点一次收起；私人情节要勾选「含私人日记」才给 */
+      const toggleEpisodeDetail = useCallback(async (id) => {
+        if (memDetail?.id === id) { setMemDetail(null); return; }
+        setMemBusy('detail');
+        try {
+          const j = await jget(`/memory/episode?id=${encodeURIComponent(id)}&private=${memPrivate ? 1 : 0}`);
+          if (!j.ok) {
+            setMsg(j.private ? '私人情节：先勾选「含私人日记」再看原话' : (j.error || '读取原话失败'));
+            setMemDetail(null);
+            return;
+          }
+          setMemDetail({ id, episode: j.episode });
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [memDetail, memPrivate]);
+
       const running = data?.daemon?.running === true;
       const gate = data?.gate ?? {};
       const queue = data?.queue ?? {};
@@ -464,20 +516,45 @@ window.__ModuleLoader__.load({
           onClick: () => deleteMem(f.id),
         }, '删除'));
 
-      const episodeRow = (e) => h('div', { 'data-dy2-item': '', key: `e:${e.id}` },
-        h('span', { 'data-dy2-badge': e.private ? 'data-warn' : 'data-ok' },
-          e.private ? '私人' : '情节'),
-        h('div', { 'data-dy2-grow': '' },
-          h('div', { 'data-dy2-kv': '' }, e.summary),
-          h('div', { 'data-dy2-sub': '' },
-            `${fmtWhen(e.ts)} · 重要度 ${e.importance}`
-            + ((e.tags ?? []).length ? ` · ${e.tags.join('/')}` : ''))),
-        h('button', {
-          'data-dy2-btn': '', 'data-danger': '', disabled: memLocked,
-          onClick: () => deleteMem(e.id),
-        }, '删除'));
+      const episodeRow = (e) => {
+        const open = memDetail?.id === e.id;
+        const evidence = memDetail?.episode?.evidence ?? [];
+        return h('div', { 'data-dy2-item': '', key: `e:${e.id}` },
+          h('span', { 'data-dy2-badge': e.private ? 'data-warn' : 'data-ok' },
+            e.private ? '私人' : '情节'),
+          h('div', { 'data-dy2-grow': '' },
+            h('div', { 'data-dy2-kv': '' }, e.summary),
+            h('div', { 'data-dy2-sub': '' },
+              `${fmtWhen(e.ts)} · 重要度 ${e.importance}`
+              + ((e.tags ?? []).length ? ` · ${e.tags.join('/')}` : '')),
+            open
+              ? h('div', { 'data-dy2-quote-block': '' },
+                evidence.length
+                  ? evidence.map((ev, i) => h('div', { 'data-dy2-quote': '', key: `q:${e.id}:${i}` },
+                    `「${ev.quote}」`,
+                    h('span', { 'data-dy2-sub': '' },
+                      ` · ${ev.source === 'diary' ? '日记' : ev.source === 'dm' ? '私信' : (ev.source || '来源')}`
+                      + (ev.at ? ` · ${fmtWhen(ev.at)}` : ''))))
+                  : h('div', { 'data-dy2-sub': '' }, '这条没有引文（固化生成的情节可能只有摘要）'))
+              : null),
+          h('button', {
+            'data-dy2-btn': '', disabled: memLocked && !open,
+            onClick: () => toggleEpisodeDetail(e.id),
+          }, open ? '收起原话' : '看原话'),
+          h('button', {
+            'data-dy2-btn': '', 'data-danger': '', disabled: memLocked,
+            onClick: () => deleteMem(e.id),
+          }, '删除'));
+      };
 
       const pendingRow = (p) => h('div', { 'data-dy2-item': 'pending', key: `p:${p.id}` },
+        h('input', {
+          type: 'checkbox',
+          checked: memSel.includes(p.id),
+          disabled: memLocked,
+          title: '选中后可批量采纳/忽略',
+          onChange: () => toggleMemSel(p.id),
+        }),
         h('span', { 'data-dy2-badge': 'data-warn' }, '待确认'),
         h('div', { 'data-dy2-grow': '' },
           h('div', { 'data-dy2-kv': '' }, p.text),
@@ -522,7 +599,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.14.9·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.15.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -858,12 +935,27 @@ window.__ModuleLoader__.load({
             }, '搜索'),
             memResults
               ? h('button', {
-                'data-dy2-btn': '', disabled: memLocked, onClick: () => setMemResults(null),
+                'data-dy2-btn': '', disabled: memLocked,
+                onClick: () => { setMemResults(null); setMemDetail(null); },
               }, '清空')
               : null),
           !memResults && (mem?.pending ?? []).length
             ? h('div', null,
               h('div', { 'data-dy2-label': '' }, `待确认（${mem.pending.length}）`),
+              h('div', { 'data-dy2-row': '', style: { marginBottom: '6px' } },
+                h('button', {
+                  'data-dy2-btn': '', disabled: memLocked,
+                  onClick: () => toggleAllMemSel(mem.pending.map((p) => p.id)),
+                }, memSel.length && mem.pending.every((p) => memSel.includes(p.id))
+                  ? '取消全选' : '全选'),
+                h('button', {
+                  'data-dy2-btn': '', 'data-primary': '', disabled: memLocked || !memSel.length,
+                  onClick: () => pendingBatch('accept'),
+                }, `采纳所选${memSel.length ? `(${memSel.length})` : ''}`),
+                h('button', {
+                  'data-dy2-btn': '', 'data-danger': '', disabled: memLocked || !memSel.length,
+                  onClick: () => pendingBatch('dismiss'),
+                }, `忽略所选${memSel.length ? `(${memSel.length})` : ''}`)),
               h('div', { 'data-dy2-memlist': '' }, ...mem.pending.map(pendingRow)))
             : null,
           memRows(),

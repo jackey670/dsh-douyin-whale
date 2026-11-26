@@ -29,11 +29,51 @@ process.env.DSH_HOME = PREVIEW_HOME; // 必须在 import whale_state 之前
 
 const { createWhaleApi } = await import('../../lib/panel_api.js');
 const { whalePaths } = await import('../../lib/whale_state.js');
+const { writeMemoryStore } = await import('../../lib/memory_layers.js');
 
 // ── 样例数据（存在才不覆盖，方便反复实验） ─────────────────────────────
 const paths = whalePaths();
 if (!fs.existsSync(paths.state)) {
   fs.mkdirSync(paths.memoryDir, { recursive: true });
+  // 记忆样例：1 事实 + 2 待确认（批量操作有东西可点）+ 公开/私人情节各一条
+  writeMemoryStore(PREVIEW_HOME, {
+    profile: {
+      version: 1,
+      updatedAt: '2026-11-20T00:00:00.000Z',
+      facts: [{
+        id: 'f_prev_01', text: '主人喜欢咖啡', category: 'preference', confidence: 0.9,
+        first_seen: '2026-11-01', last_seen: '2026-11-20', pinned: true,
+        superseded_by: '', visibility: 'public',
+      }],
+      pending: [{
+        id: 'p_prev_01', text: '主人最近在学吉他', category: 'preference', confidence: 0.65,
+        first_seen: '2026-11-19', last_seen: '2026-11-19', evidence: '', visibility: 'public',
+      }, {
+        id: 'p_prev_02', text: '主人不喜欢吵闹的地方', category: 'boundary', confidence: 0.6,
+        first_seen: '2026-11-20', last_seen: '2026-11-20', evidence: '', visibility: 'public',
+      }],
+      relationship: { stage: '', milestones: [] },
+    },
+    episodes: [{
+      id: 'ep_prev_01', ts: '2026-11-18T12:00:00.000Z', kind: 'chat',
+      summary: '主人加班到很晚，聊了会儿天。',
+      evidence: [
+        { source: 'dm', quote: '今天又加班到十点', at: '2026-11-18T12:00:00.000Z' },
+        { source: 'dm', quote: '有点累但还行', at: '2026-11-18T12:05:00.000Z' },
+      ],
+      tags: ['加班'], importance: 3, valence: -1, visibility: 'public',
+    }, {
+      id: 'ep_prev_02', ts: '2026-11-19T12:00:00.000Z', kind: 'diary',
+      summary: '私人日记：今天很想主人。',
+      evidence: [{ source: 'diary', quote: '今天有点想主人' }],
+      tags: ['私人日记'], importance: 2, valence: 1, visibility: 'private',
+    }],
+    arcs: { version: 1, arcs: [] },
+    meta: {
+      version: 1, migratedAt: '2026-11-01T00:00:00.000Z',
+      lastConsolidatedAt: '2026-11-20T00:00:00.000Z',
+    },
+  });
   const today = new Date().toLocaleDateString('sv-SE');
   fs.writeFileSync(paths.config, JSON.stringify({
     persona: { name: '大肥鱼', ownerTitle: '主人' },
