@@ -41,6 +41,9 @@ const EXPORT_FILES = [
   'memory/arcs.json',
   'memory/index.json',
   'memory/meta.json',
+  // 共现边是「用出来的」关联，重建不了；轨迹用于星图回放
+  'memory/links.jsonl',
+  'memory/traces.jsonl',
   'memory/dm-*.json',
   'whale-diary.md',
   'whale-diary-private.md',
@@ -131,6 +134,7 @@ function writeReadme(staging) {
     '',
     '- 本包不含 cookie、登录态、配置里的 API key。',
     '- `index.json` 可由 `episodes.jsonl` 重建，保留只是为了恢复后立即可检索。',
+    '- `links.jsonl` 是「一起被想起」学出来的共现边，`traces.jsonl` 是最近想起轨迹；两者都不可重建，一并迁移。',
   ].join('\n') + '\n', 'utf8');
 }
 

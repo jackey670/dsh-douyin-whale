@@ -35,6 +35,8 @@ fs.writeFileSync(path.join(home, 'memory/episodes.jsonl'), [
 fs.writeFileSync(path.join(home, 'memory/arcs.json'), JSON.stringify({ version: 1, arcs: [{ id: 'arc_1' }] }), 'utf8');
 fs.writeFileSync(path.join(home, 'memory/meta.json'), JSON.stringify({ version: 1, migratedAt: '2026-10-20T00:00:00.000Z' }), 'utf8');
 fs.writeFileSync(path.join(home, 'memory/index.json'), JSON.stringify({ version: 1, terms: {} }), 'utf8');
+fs.writeFileSync(path.join(home, 'memory/links.jsonl'), JSON.stringify({ a: 'ep_1', b: 'ep_2', kind: 'co_recall', w: 0.2 }) + '\n', 'utf8');
+fs.writeFileSync(path.join(home, 'memory/traces.jsonl'), JSON.stringify({ id: 'tr_1', at: '2026-11-25T00:00:00.000Z', trigger: 'watch', ids: ['ep_1', 'ep_2'] }) + '\n', 'utf8');
 fs.writeFileSync(path.join(home, 'memory/dm-测试主人.json'), JSON.stringify({
   who: { nick: '测试主人' },
   messages: [
@@ -64,8 +66,10 @@ try {
     'memory/dm-测试主人.json',
     'memory/episodes.jsonl',
     'memory/index.json',
+    'memory/links.jsonl',
     'memory/meta.json',
     'memory/profile.json',
+    'memory/traces.jsonl',
     'whale-diary-private.md',
     'whale-diary.md',
     'whale-mood.json',
@@ -114,7 +118,7 @@ try {
   {
     const r = verifyRepo({ repo: bare });
     assert.equal(r.ok, true, JSON.stringify(r));
-    assert.equal(r.files, 9);
+    assert.equal(r.files, 11);
     assert.deepEqual(r.bad, []);
     assert.deepEqual(r.missing, []);
     assert.equal(r.counts.episodes, 3);

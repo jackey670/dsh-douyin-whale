@@ -1,6 +1,57 @@
 # Changelog
 
-## 1.17.0 — 2026-11-26
+## 1.18.0 — 2026-11-26
+
+记忆星图 P2：记忆开始「用进废退」——被想起的星更亮，一起被想起的星连上线。
+
+### 新增
+
+- **回忆强化**（`recordRecall`，`lib/memory_layers.js`）：
+  - 四条注入路径（值班轮/调度器/主动分享）统一 `withMemoryLayers({record:true,
+    trigger:'watch'|'share'})`，每轮把实际用到的情节 `uses++`、写 `last_used_at`；
+    搜索/面板浏览等只读路径不写。
+  - 星图亮度改吃强化后的强度：`s0 = 0.5 + importance/10 + min(0.25, 0.04·uses)`，
+    衰减从上次想起重新起算；情节节点带「想起 N 次」。
+  - 检索排序**暂时不吃** `uses`，避免「越常被搜到就越常被搜到」的正反馈；
+    留给图扩散回忆统一处理。
+- **共现边**：同一轮被想起的情节两两写入 `memory/links.jsonl`（`co_recall`，
+  每次 +0.05，上限 0.8）；只在锁内重读后仍存在的 id 之间连边，不会留下幽灵边。
+  星图新增 `co_recall` 边类型；结构边已占用的 pair 不重复画。
+- **回忆轨迹**：`recordRecall` 同时追写 `memory/traces.jsonl`（id/触发/时间，
+  不含摘要与原话），保留最近 2000 条。
+- **`GET /memory/traces?limit=`**：返回最近想起记录，`limit` 夹 1–100、缺省 20。
+- **星图轨迹回放**（PANEL_BUILD=28）：星图下方「最近想起」chips；点一条把该轮的
+  星画上金环、轮内边金色脉冲高亮，再点取消。
+- **`lib/memory_lock.js`**：把记忆单写者锁从 `memory_consolidate.js` 抽出来，
+  固化/反思/面板写/`recordRecall` 共用；陈旧锁（PID 已不在）自动接管。
+  `memory_consolidate.js` 继续 re-export，旧引用不受影响。
+
+### 变更
+
+- `tools/memory-export.mjs`：迁移包纳入 `memory/links.jsonl` 与
+  `memory/traces.jsonl`——共现边和轨迹是「用出来的」，无法从原文重建。
+- `npm run check` 增加 `lib/memory_lock.js`。
+- `docs/MEMORY-LAYERS.md`：补 §4.5 关联与回忆轨迹、`/memory/traces`、
+  轨迹回放；修正「召回写回后下次降权」的旧描述。
+
+### 验证
+
+- `lib/memory_layers.test.mjs` 18 项：召回写入/去重/上限、共现边递增与 0.8 封顶、
+  轨迹不含正文、锁占用返回 busy、释放后可写、陈旧锁自愈。
+- `lib/memory_graph.test.mjs` 7 项：+强化亮度（uses/lastUsedAt 对比）与
+  `co_recall` 边进图。
+- `lib/panel_api.test.mjs` 31 项：+`/memory/traces` 返回 id/触发/时间且不含正文、
+  limit 非法值夹取。
+- `tools/memory-export.test.mjs` 5 项：清单 11 个文件（含 links/traces），
+  推送/未变化/增量、verify 全对。
+- `npm test` 22 组全绿；面板预览实测：30 星/37 连线，两条「最近想起」chips，
+  点选后两条情节金环 + 金色共现边。
+
+### 未做（转 P3）
+
+- 图扩散回忆（激活扩散召回）+ 30 题评测对比：生产还没有真实 `co_recall` 数据，
+  现在评测等于拿合成边自证，等值班跑出轨迹再上。
+
 
 记忆星图 P1：把四层记忆摆成一个可交互的 3D 星系。
 

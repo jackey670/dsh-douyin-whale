@@ -2,8 +2,8 @@
 
 > 状态：Phase 2A 已实现（v1.14.1）；Phase 3a 评测/面板（v1.14.2）、
 > Phase 3b 周反思（v1.14.3）、Phase 2B 值班会话轮换（v1.14.4）已做；
-> 真实 DSH 值班宿主还需真机验证。
-> 日期：2026-11-11（v1.14.4 更新于 2026-11-15）
+> 记忆星图 P1/P2（v1.17.0 / v1.18.0）已完成；真实 DSH 值班宿主还需真机验证。
+> 日期：2026-11-11（v1.18.0 更新于 2026-11-26）
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
 ## 0. 实现进度
@@ -17,6 +17,7 @@
 | Phase 3a 评测 + 面板 | ✅ v1.14.2：`tools/memory-eval.mjs` 30 题；`/memory/overview|search|pin|pending|item`；面板记忆卡；低置信待确认 |
 | Phase 3b 周反思 | ✅ v1.14.3：`lib/memory_reflect.js`；最近 7 天情节 → arcs；私人叙事线默认不注入；面板显示叙事线 |
 | Phase 3c 向量召回 | ⬜ 暂不上：合成集 hit@4 100%，等真实问题集出现缺口再评估 |
+| Phase 4 记忆星图 | ✅ v1.17.0 P1（图构建 + 3D 面板）、v1.18.0 P2（回忆强化/共现边/轨迹回放）；图扩散回忆等真实共现数据攒够再上 |
 
 
 ## 1. 要解决的问题
@@ -55,6 +56,8 @@ L2 语义记忆   ~/.dsh/memory/profile.json         稳定事实/偏好/边界/
 L3 反思摘要   ~/.dsh/memory/arcs.json            按周/主题的叙事线
 情感          ~/.dsh/whale-mood.json（现有）     当前心情 + 每日快照进 episodes
 索引          ~/.dsh/memory/index.json           字符二元组倒排（可从 episodes 重建）
+关联          ~/.dsh/memory/links.jsonl          共现边：同轮被想起过（学出来的，重建不了）
+轨迹          ~/.dsh/memory/traces.jsonl         最近想起记录（id/触发/时间，不含正文）
 元数据        ~/.dsh/memory/meta.json            lastConsolidatedAt、版本、统计
 ```
 
@@ -158,6 +161,25 @@ Phase 1 用 `index.json`：
 - 规模评估：1 万条 × 100 字 ≈ 1MB 原文，索引 2–3MB，启动加载可接受。
 - Phase 1 技术验证项：`node:sqlite` 是否支持 FTS5/trigram；如果支持，可换成 SQLite 索引，接口不变。
 
+### 4.5 关联与回忆轨迹（v1.18.0）
+
+```json
+// links.jsonl：一行一条无向边，星图直接读
+{ "a": "ep_20261106_001", "b": "ep_20261110_002", "kind": "co_recall", "w": 0.25, "updatedAt": "..." }
+// traces.jsonl：一行一次召回，只记 id/触发/时间，不记正文
+{ "id": "tr_mabc123", "at": "...", "trigger": "watch", "ids": ["ep_...", "ep_..."] }
+```
+
+- `recordRecall({ ids, trigger })` 在记忆锁内**重读**情节，只给仍然存在的 id 记
+  `uses++` / `last_used_at`，再把这一轮的 id 两两写成 `co_recall` 边（每次 +0.05，
+  上限 0.8）。锁被固化占用时返回 `{ok:false, reason:'busy'}`，调用方照常继续。
+- 四条注入路径统一 `withMemoryLayers({ record:true, trigger:'watch'|'share' })`；
+  搜索、面板浏览等只读路径不写轨迹。
+- `traces.jsonl` 只保留最近 2000 条；`/memory/traces` 只回 id/触发/时间，摘要和
+  原话都不出现。
+- 星图亮度用强化后的强度：`s0 = 0.5 + importance/10 + min(0.25, 0.04·uses)`，
+  衰减从 `last_used_at` 重新起算——越被想起越亮，长期不用的星自然变暗。
+
 ## 5. 写入路径
 
 ### 5.1 每轮（轻量）
@@ -216,7 +238,9 @@ score = 0.45 * bm25   + 0.25 * recency + 0.20 * importance + 0.10 * affect
 - 选出 top 12 后做 MMR 去重（避免同一话题占满）。
 - 没有 query（主动分享轮）时只用 recency + importance。
 - query 来源：当前任务标题/正文 + 最近 2 条对话 + 主人昵称。
-- 召回结果写回 `last_used_at/uses`，下次降权，避免每轮重复同一件事。
+- 召回结果由 `recordRecall` 写回 `uses/last_used_at`（v1.18.0）：星图亮度据此增强。
+  检索排序暂不读 `uses`——排序再吃强化信号会形成「越常被搜到就越常被搜到」的正反馈，
+  等图扩散回忆上线时再统一考虑。
 
 Token 预算（不含任务/persona）：
 
@@ -268,7 +292,9 @@ Token 预算（不含任务/persona）：
 跨机迁移/备份用 `tools/memory-export.mjs`（v1.14.5）：
 `--export` 出 staging + manifest（每文件 sha256），`--push` 推私有仓
 （GitCode `dsh-douyin-whale-memory`，含历史、禁 GitHub），`--verify` 克隆比对；
-排除 `consolidate.lock` / `session-epochs.json` / `*.tmp`。
+排除 `consolidate.lock` / `session-epochs.json` / `*.tmp`。v1.18.0 起
+`links.jsonl`（共现边）与 `traces.jsonl`（回忆轨迹）也进迁移包——这两份是「用出来的」，
+无法从原文重建。
 
 1. 读现有 `dm-<昵称>.json` 的 80 条消息：
    - 按天分组，每天生成 1 条 episode（summary 由规则截取，不调模型），evidence 保留原话；
@@ -297,8 +323,10 @@ Token 预算（不含任务/persona）：
   缺省 90。
 - `GET /memory/graph?private=1&max=&minSim=`：只读星图（v1.17.0）。节点 = 自我/
   性格/主人/事实/情节/叙事线/主题，边 = core/about/evidence/part_of/related/
-  supersedes；节点只带摘要与详情，evidence 原话只参与相似度计算、不下发。私人
-  条目默认过滤，`private=1` 才出现。
+  supersedes/co_recall（v1.18.0）；节点只带摘要与详情，evidence 原话只参与相似度
+  计算、不下发。私人条目默认过滤，`private=1` 才出现。
+- `GET /memory/traces?limit=`：最近想起记录（v1.18.0），`limit` 夹 1–100、缺省 20；
+  只回 `{id, at, trigger, ids}`，不含摘要/原话。
 - `POST /memory/reindex`：按当前情节重建倒排索引（幂等维护动作，不改原文）。
 - `DELETE /memory/item?id=`：删除事实（软删）或情节（移出 jsonl 并重建索引）；
   私信/日记原文保留。
@@ -308,8 +336,10 @@ Token 预算（不含任务/persona）：
 - 面板「记忆体检」卡：六项诊断逐条 ✓/「N 处」+ 样本，底部「重新体检」「重建索引」；
   面板加载时自动体检一次。
 - 面板「记忆星图」卡（v1.17.0）：canvas 3D 星图，轨道旋转/缩放/点选详情/看原话、
-  含私人开关、星图与时间两种布局、全屏；亮度=衰减后的强度，节点大小=重要度/
+  含私人开关、星图与时间两种布局、全屏；亮度=强化衰减后的强度，节点大小=重要度/
   度数，颜色按类型。
+- 星图「最近想起」（v1.18.0）：星图下方 chips 列出最近召回；点一条把该轮的星和
+  它们之间的边金色高亮，再点取消。数据只来自 `/memory/traces`，不加载正文。
 - 日志只记 id/数量/耗时；正文永不进日志。
 
 ## 10. 测试与验收
@@ -394,6 +424,7 @@ npm run memory:eval:local   # 用生成的问题集跑评测
 | Phase 3a | 30 题评测 + 面板记忆浏览器 + 待确认 | ✅ v1.14.2 |
 | Phase 3b | 周反思 arcs | ✅ v1.14.3 |
 | Phase 3c | 可选本地向量召回 | ⬜ 暂不上（等真实问题集缺口） |
+| Phase 4 | 记忆星图（图构建/3D 面板/回忆强化/轨迹回放） | ✅ v1.17.0–v1.18.0 |
 
 建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2A，v1.14.2 = Phase 3a，
 v1.14.3 = Phase 3b，v1.14.4 = Phase 2B。下一版先做值班轮换真机验证。

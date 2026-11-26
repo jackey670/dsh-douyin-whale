@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback, useRef } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 27;
+    const PANEL_BUILD = 28;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -291,7 +291,7 @@ window.__ModuleLoader__.load({
       return pos;
     };
 
-    function StarMap({ graph, layout, full, onToggleFull }) {
+    function StarMap({ graph, layout, full, onToggleFull, trace }) {
       const canvasRef = useRef(null);
       const wrapRef = useRef(null);
       const engineRef = useRef(null);
@@ -337,6 +337,7 @@ window.__ModuleLoader__.load({
         let W = 600; let H = 420; let dpr = 1;
         let raf = 0; let last = 0;
         let hovered = null;
+        let traceIds = new Set();
         let selectedId = selectedRef.current;
         let dragging = false; let moved = 0; let lx = 0; let ly = 0;
         const screen = new Map();
@@ -392,12 +393,14 @@ window.__ModuleLoader__.load({
             const A = proj.get(e.a); const B = proj.get(e.b);
             if (!A || !B) continue;
             const linked = selectedId && (e.a === selectedId || e.b === selectedId);
+            const inTrace = traceIds.size > 0 && traceIds.has(e.a) && traceIds.has(e.b);
             let alpha = (0.07 + 0.18 * (Number(e.w) || 0.5)) * Math.min(1, 2.6 / Math.max(0.6, (A.depth + B.depth) / 2));
             if (hovered && (e.a === hovered || e.b === hovered)) alpha += 0.22;
             if (selectedId) alpha = linked ? alpha + 0.32 : alpha * 0.3;
-            ctx.strokeStyle = hexRgba(STAR_EDGE[e.kind] || '#94a3b8', Math.min(0.85, alpha));
-            ctx.lineWidth = linked ? 1.7 : 0.7 + (Number(e.w) || 0.5) * 0.7;
-            ctx.setLineDash(e.kind === 'related' ? [3, 5] : []);
+            if (inTrace) alpha += 0.22 + 0.12 * Math.sin(t / 300 + e.a.length);
+            ctx.strokeStyle = hexRgba(inTrace ? '#fbbf24' : (STAR_EDGE[e.kind] || '#94a3b8'), Math.min(0.9, alpha));
+            ctx.lineWidth = inTrace ? 2.1 : linked ? 1.7 : 0.7 + (Number(e.w) || 0.5) * 0.7;
+            ctx.setLineDash(e.kind === 'related' && !inTrace ? [3, 5] : []);
             ctx.beginPath();
             ctx.moveTo(A.x, A.y);
             ctx.lineTo(B.x, B.y);
@@ -412,6 +415,7 @@ window.__ModuleLoader__.load({
             const q = proj.get(n.id);
             const meta = STAR_TYPE[n.type] || { color: '#94a3b8' };
             const strength = n.state === 'pinned' ? 1 : Math.max(0.12, Number(n.strength) || 0.7);
+            const isTrace = traceIds.has(n.id);
             let base = n.type === 'self' ? 9
               : n.type === 'owner' ? 7
                 : n.type === 'arc' ? 6 + Math.min(5, n.episodeCount || 0)
@@ -420,7 +424,8 @@ window.__ModuleLoader__.load({
                       : n.type === 'trait' ? 3.6
                         : 3.8 + Math.min(8, Number(n.count) || 0) * 0.45;
             base *= Math.min(1.8, 2.7 / q.depth) * cam.zoom;
-            const alpha = (0.3 + 0.7 * strength) * (n.private ? 0.55 : 1) * Math.min(1, 3.2 / q.depth);
+            const alpha = (0.3 + 0.7 * strength) * (n.private ? 0.55 : 1)
+              * Math.min(1, 3.2 / q.depth) * (isTrace ? 1.2 : 1);
             ctx.globalAlpha = Math.min(0.95, alpha);
             const sp = starSprite(meta.color);
             ctx.drawImage(sp, q.x - base * 2.2, q.y - base * 2.2, base * 4.4, base * 4.4);
@@ -429,10 +434,10 @@ window.__ModuleLoader__.load({
             ctx.beginPath();
             ctx.arc(q.x, q.y, Math.max(1.1, base * 0.4), 0, Math.PI * 2);
             ctx.fill();
-            if (n.state === 'pinned' || selectedId === n.id || hovered === n.id) {
-              ctx.globalAlpha = selectedId === n.id ? 0.95 : 0.55;
-              ctx.strokeStyle = meta.color;
-              ctx.lineWidth = selectedId === n.id ? 1.6 : 1;
+            if (n.state === 'pinned' || selectedId === n.id || hovered === n.id || isTrace) {
+              ctx.globalAlpha = selectedId === n.id ? 0.95 : isTrace ? 0.75 : 0.55;
+              ctx.strokeStyle = isTrace ? '#fbbf24' : meta.color;
+              ctx.lineWidth = selectedId === n.id ? 1.6 : isTrace ? 1.5 : 1;
               ctx.beginPath();
               ctx.arc(q.x, q.y, base + 3, 0, Math.PI * 2);
               ctx.stroke();
@@ -546,6 +551,7 @@ window.__ModuleLoader__.load({
         raf = requestAnimationFrame(tick);
         engineRef.current = {
           setSelected: (id) => { selectedId = id || null; },
+          setTrace: (ids) => { traceIds = new Set(ids || []); draw(performance.now()); },
           reset: () => { cam.yaw = 0.62; cam.pitch = 0.3; cam.zoom = 1; },
         };
         return () => {
@@ -565,6 +571,10 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         engineRef.current?.setSelected(selected?.id || null);
       }, [selected]);
+
+      useEffect(() => {
+        engineRef.current?.setTrace(trace?.ids || []);
+      }, [trace]);
 
       useEffect(() => {
         setSelected(null);
@@ -671,23 +681,27 @@ window.__ModuleLoader__.load({
       const [starLayout, setStarLayout] = useState('force'); // force | time
       const [starFull, setStarFull] = useState(false);
       const [starBusy, setStarBusy] = useState('');
+      const [starTraces, setStarTraces] = useState([]);    // 最近想起（只有 id）
+      const [starTraceSel, setStarTraceSel] = useState(''); // 选中的轨迹 id
       // 内容队列默认只展开最近几条；「展开全部」按钮切完整列表
       const [queueOpen, setQueueOpen] = useState(false);
 
       const load = useCallback(async () => {
         setBusy('load');
         try {
-          const [s, q, c, l, m, hl, sg] = await Promise.all([
+          const [s, q, c, l, m, hl, sg, st] = await Promise.all([
             jget('/status'), jget('/queue'), jget('/config'), jget('/login/status'),
             jget('/memory/overview').catch(() => null),
             jget('/memory/health').catch(() => null),
             jget('/memory/graph').catch(() => null),
+            jget('/memory/traces?limit=6').catch(() => null),
           ]);
           setData(s);
           setLogin(l);
           setMem(m);
           setHealth(hl);
           setStarGraph(sg);
+          setStarTraces(st?.traces || []);
           setNick(s.owner || '');
           setIntervalMin(s.watch?.intervalMinutes ?? 10);
           setDailyMax(s.watch?.dailyMax ?? 60);
@@ -862,7 +876,13 @@ window.__ModuleLoader__.load({
       const loadStar = useCallback(async (priv = false) => {
         setStarBusy('load');
         try {
-          setStarGraph(await jget(`/memory/graph?private=${priv ? 1 : 0}`));
+          const [g, t] = await Promise.all([
+            jget(`/memory/graph?private=${priv ? 1 : 0}`),
+            jget('/memory/traces?limit=6').catch(() => null),
+          ]);
+          setStarGraph(g);
+          setStarTraces(t?.traces || []);
+          setStarTraceSel('');
         } catch (e) {
           setMsg(String(e?.message ?? e));
         } finally {
@@ -1146,7 +1166,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.17.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.18.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -1566,9 +1586,21 @@ window.__ModuleLoader__.load({
               layout: starLayout,
               full: starFull,
               onToggleFull: () => setStarFull(!starFull),
+              trace: starTraces.find((t) => t.id === starTraceSel) || null,
             })
             : h('div', { 'data-dy2-empty': '' },
               starBusy ? '加载星图…' : '还没有记忆 —— 聊几天之后这里会亮起来'),
+          starTraces.length
+            ? h('div', { 'data-dy2-row': '' },
+              h('span', { 'data-dy2-sub': '' }, '最近想起：'),
+              ...starTraces.map((tr) => h('button', {
+                'data-dy2-btn': '',
+                'data-primary': starTraceSel === tr.id ? '' : undefined,
+                key: `tr:${tr.id}`,
+                title: `触发：${tr.trigger || '未知'}`,
+                onClick: () => setStarTraceSel(starTraceSel === tr.id ? '' : tr.id),
+              }, `想起 ${tr.ids.length} 条 · ${fmtWhen(tr.at)}`)))
+            : null,
           starGraph?.stats?.truncated?.episodes
             ? h('div', { 'data-dy2-sub': '' },
               `只显示最近 ${starGraph.nodes.filter((n) => n.type === 'episode').length}`

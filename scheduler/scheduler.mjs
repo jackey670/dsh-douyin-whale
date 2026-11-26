@@ -259,6 +259,8 @@ async function tick({ manual = false } = {}) {
           query: [ctx.item?.title, ctx.item?.text].filter(Boolean).join(' ').slice(0, 200),
           mem: ctx.mem,
           log,
+          record: true,
+          trigger: 'watch',
         })
         return buildTaskPrompt({
           ...ctx, mem, root: ROOT, home: DSH_HOME,
@@ -370,6 +372,8 @@ async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
       query: (cfg.preferences?.like ?? []).join(' '),
       mem: dmContext(DSH_HOME, ownerNick),
       log,
+      record: true,
+      trigger: 'share',
     })
     const r = await wakeAgent(buildSharePrompt({ ownerNick, mem, cfg, root: ROOT, mood }), 'share')
     // 无论成败都记时间戳：这次机会用掉了，限流闸才算数
