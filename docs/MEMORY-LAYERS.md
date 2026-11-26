@@ -288,10 +288,21 @@ Token 预算（不含任务/persona）：
   `private=1` 才包含私人条目。
 - `POST /memory/pin`：事实置顶/取消置顶。
 - `POST /memory/pending`：`{id, action: accept|dismiss}` 采纳或忽略待确认事实。
+- `POST /memory/pending/batch`：`{ids:[…≤20], action}` 批量采纳/忽略，一次读一次写；
+  返回 `resolved` 与 `missing`，不存在的 id 不算失败。
+- `GET /memory/episode?id=&private=1`：**唯一返回 evidence 原话的出口**；私人情节
+  不带 `private=1` 时返回 `200 {ok:false, private:true}`（不抛 404，免得面板只显示
+  transport 错误）。
+- `GET /memory/health?staleDays=`：只读六项诊断（见 §10.2），`staleDays` 夹 7–365，
+  缺省 90。
+- `POST /memory/reindex`：按当前情节重建倒排索引（幂等维护动作，不改原文）。
 - `DELETE /memory/item?id=`：删除事实（软删）或情节（移出 jsonl 并重建索引）；
   私信/日记原文保留。
 - 写操作和固化共用 `memory/consolidate.lock`，固化进行中返回 409。
-- 面板「记忆」卡：层数、最后固化、最近 3–5 条摘要、搜索框、置顶/删除、待确认。
+- 面板「记忆」卡：层数、最后固化、最近 3–5 条摘要、搜索框、置顶/删除、待确认
+  （勾选 + 全选 + 批量采纳/忽略）、情节「看原话」。
+- 面板「记忆体检」卡：六项诊断逐条 ✓/「N 处」+ 样本，底部「重新体检」「重建索引」；
+  面板加载时自动体检一次。
 - 日志只记 id/数量/耗时；正文永不进日志。
 
 ## 10. 测试与验收
@@ -329,6 +340,41 @@ Token 预算（不含任务/persona）：
 
 结论：hit@4 已达标，**暂不上本地向量召回**；真实回忆质量用
 `node tools/memory-eval.mjs --questions <本机文件>` 手工出题测，问题集不入库。
+
+### 10.2 真实语料基线（v1.16.1）
+
+| 指标 | 结果 |
+|---|---|
+| 题数 | 30（事件可排序 21–23，随记忆增长） |
+| hit@1 | 87–88% |
+| hit@4 | 100% |
+| MRR | ~0.93 |
+| 事实命中 | 5/5 |
+| 负例无误召 | 2/2 |
+| 私人过滤 | 1–2/2 |
+
+一条命令重跑（题目来自本机真实记忆，只写 `data/`，gitignored、不回显）：
+
+```bash
+npm run memory:eval:gen     # ~/.dsh 记忆 → data/memory-eval-questions.json
+npm run memory:eval:local   # 用生成的问题集跑评测
+```
+
+### 10.3 记忆体检（v1.16.0）
+
+`memoryHealth()` 六项诊断，只提示、**不自动改记忆**：
+
+| key | 含义 | 判据 |
+|---|---|---|
+| `staleFacts` | 长期未更新的事实 | `last_seen/first_seen` 超过 `staleDays`（默认 90） |
+| `duplicateFacts` | 疑似重复事实 | `similarText` 相似；双方都置顶的跳过 |
+| `episodesNoEvidence` | 没有引文的情节 | `evidence` 为空 |
+| `arcBrokenRefs` | 叙事线引用已删除情节 | `episode_ids` 里有 id 不在 episodes |
+| `indexStale` | 检索索引失配 | 无索引 / `docCount` ≠ 情节数 / 比最新情节旧 |
+| `pendingBacklog` | 待确认积压 | `pending` 条数，附最老天数 |
+
+样本只给摘要（最多 5–8 条），**不含证据原话**。`rebuildMemoryIndex()` 可幂等重建
+索引；重复/过期事实的处置仍走逐条或批量操作，避免自动改记忆改坏。
 
 ## 11. 阶段
 
