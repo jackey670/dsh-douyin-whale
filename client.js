@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 25;
+    const PANEL_BUILD = 26;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -195,19 +195,22 @@ window.__ModuleLoader__.load({
       const [memBusy, setMemBusy] = useState('');
       const [memDetail, setMemDetail] = useState(null);   // { id, episode } 展开的原话
       const [memSel, setMemSel] = useState([]);           // 待确认批量选择
+      const [health, setHealth] = useState(null);         // 记忆体检
       // 内容队列默认只展开最近几条；「展开全部」按钮切完整列表
       const [queueOpen, setQueueOpen] = useState(false);
 
       const load = useCallback(async () => {
         setBusy('load');
         try {
-          const [s, q, c, l, m] = await Promise.all([
+          const [s, q, c, l, m, hl] = await Promise.all([
             jget('/status'), jget('/queue'), jget('/config'), jget('/login/status'),
             jget('/memory/overview').catch(() => null),
+            jget('/memory/health').catch(() => null),
           ]);
           setData(s);
           setLogin(l);
           setMem(m);
+          setHealth(hl);
           setNick(s.owner || '');
           setIntervalMin(s.watch?.intervalMinutes ?? 10);
           setDailyMax(s.watch?.dailyMax ?? 60);
@@ -366,13 +369,32 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
+      const loadHealth = useCallback(async () => {
+        try { setHealth(await jget('/memory/health')); } catch { /* 体检失败不挡面板 */ }
+      }, []);
+
       const loadMemory = useCallback(async () => {
         try {
           setMem(await jget('/memory/overview'));
+          await loadHealth();
         } catch (e) {
           setMsg(String(e?.message ?? e));
         }
-      }, []);
+      }, [loadHealth]);
+
+      const reindexMemory = useCallback(async () => {
+        setMemBusy('reindex');
+        try {
+          const j = await jpost('/memory/reindex', {});
+          if (!j.ok) setMsg(j.error || '重建失败');
+          else setMsg(`索引已重建（${j.episodes} 条情节 / ${j.terms} 词）`);
+          await loadHealth();
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setMemBusy('');
+        }
+      }, [loadHealth]);
 
       const searchMem = useCallback(async () => {
         setMemBusy('search');
@@ -581,6 +603,33 @@ window.__ModuleLoader__.load({
             `${a.period} · ${a.summary}`
             + (a.episodeCount ? ` · 引用 ${a.episodeCount} 条` : ''))));
 
+      const clip = (t, n) => {
+        const s = String(t ?? '').replace(/\s+/g, ' ').trim();
+        return s.length > n ? `${s.slice(0, n)}…` : s;
+      };
+      const healthRow = (it) => {
+        const n = Number(it.count) || 0;
+        const sample = Array.isArray(it.sample) ? it.sample : [];
+        let more = '';
+        if (it.key === 'staleFacts') {
+          more = sample.map((x) => `${clip(x.text, 40)}（${x.days} 天）`).join('；');
+        } else if (it.key === 'duplicateFacts') {
+          more = sample.map((x) => `${clip(x.a?.text, 24)} ≈ ${clip(x.b?.text, 24)}`).join('；');
+        } else if (it.key === 'episodesNoEvidence') {
+          more = sample.map((x) => clip(x.summary, 40)).join('；');
+        } else if (it.key === 'arcBrokenRefs') {
+          more = sample.map((x) => `${clip(x.title, 20)}（缺 ${x.missing}）`).join('；');
+        } else {
+          more = it.detail || (it.key === 'indexStale' && n ? '索引与情节数/时间对不上，点下面重建' : '');
+        }
+        return h('div', { 'data-dy2-item': n > 0 ? 'failed' : 'done', key: `h:${it.key}` },
+          h('span', { 'data-dy2-badge': n > 0 ? 'data-warn' : 'data-ok' },
+            n > 0 ? `${n} 处` : '✓'),
+          h('div', { 'data-dy2-grow': '' },
+            h('div', { 'data-dy2-kv': '' }, it.label),
+            more ? h('div', { 'data-dy2-sub': '' }, more) : null));
+      };
+
       const memRows = () => {
         const r = memResults || mem;
         if (!r) return h('div', { 'data-dy2-empty': '' }, '还没有记忆数据');
@@ -602,7 +651,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.15.3·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.16.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -983,6 +1032,33 @@ window.__ModuleLoader__.load({
               `搜索「${memResults.query || '（空）'}」：事实 ${memResults.facts?.length ?? 0} 条 · `
               + `情节 ${memResults.episodes?.length ?? 0} 条`)
             : null),
+
+        /* ── 记忆体检 ── */
+        h('div', { 'data-dy2-card': '' },
+          h('div', { 'data-dy2-title': '' }, '记忆体检',
+            health
+              ? h('span', {
+                'data-dy2-badge': health.issues?.some((i) => i.count > 0) ? 'data-warn' : 'data-ok',
+              }, health.issues?.some((i) => i.count > 0) ? '有可处理项' : '一切正常')
+              : null,
+            h('span', { 'data-dy2-sub': '' }, '只做诊断，不自动改记忆')),
+          health
+            ? h('div', { 'data-dy2-sub': '' },
+              `事实 ${health.totals?.facts ?? 0} · 待确认 ${health.totals?.pending ?? 0}`
+              + ` · 情节 ${health.totals?.episodes ?? 0} · 叙事 ${health.totals?.arcs ?? 0}`
+              + `；过期阈值 ${health.staleDays ?? 90} 天`)
+            : null,
+          health?.issues?.length
+            ? h('div', { 'data-dy2-memlist': '' }, ...health.issues.map(healthRow))
+            : h('div', { 'data-dy2-empty': '' }, '还没体检 —— 点「重新体检」'),
+          h('div', { 'data-dy2-actions': '' },
+            h('button', {
+              'data-dy2-btn': '', disabled: memLocked, onClick: loadHealth,
+            }, '重新体检'),
+            h('button', {
+              'data-dy2-btn': '', 'data-primary': '', disabled: memLocked,
+              onClick: reindexMemory,
+            }, memBusy === 'reindex' ? '重建中…' : '重建索引'))),
 
         /* ── 队列 ── */
         h('div', { 'data-dy2-card': '' },
