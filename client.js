@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 24;
+    const PANEL_BUILD = 25;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -179,6 +179,7 @@ window.__ModuleLoader__.load({
       const [sharePct, setSharePct] = useState(8);
       const [shareMax, setShareMax] = useState(3);
       const [shareMin, setShareMin] = useState(120);
+      const [shareLinkFallback, setShareLinkFallback] = useState(false);
       const [personaText, setPersonaText] = useState('');
       const [moodEnabled, setMoodEnabled] = useState(true);
       const [sleepStart, setSleepStart] = useState('23:30');
@@ -220,6 +221,7 @@ window.__ModuleLoader__.load({
           setSharePct(Math.round((s.proactiveShare?.probability ?? 0.08) * 100));
           setShareMax(s.proactiveShare?.maxPerDay ?? 3);
           setShareMin(s.proactiveShare?.minIntervalMinutes ?? 120);
+          setShareLinkFallback(s.proactiveShare?.linkFallback === true);
           const cc = c.config || {};
           setPersonaText(cc.persona?.text ?? '');
           setMoodEnabled(cc.mood?.enabled !== false);
@@ -291,6 +293,7 @@ window.__ModuleLoader__.load({
               probability: sharePct / 100,
               maxPerDay: shareMax,
               minIntervalMinutes: shareMin,
+              linkFallback: shareLinkFallback,
             },
             persona: { text: personaText },
             mood: {
@@ -312,7 +315,7 @@ window.__ModuleLoader__.load({
           setBusy('');
         }
       }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax,
-        shareEnabled, sharePct, shareMax, shareMin, personaText,
+        shareEnabled, sharePct, shareMax, shareMin, shareLinkFallback, personaText,
         moodEnabled, sleepStart, sleepEnd, petEnabled, petSleep, petMin, dutyVisible]);
 
       const schedulerAct = useCallback(async (action) => {
@@ -599,7 +602,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.15.2·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.15.3·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -806,6 +809,17 @@ window.__ModuleLoader__.load({
                 }),
                 h('span', { 'data-dy2-unit': '' }, '分钟')),
               h('div', { 'data-dy2-hint': '' }, '5–1440；两次尝试至少隔这么久，压住 token 消耗。')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: shareLinkFallback,
+                  onChange: (e) => setShareLinkFallback(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '分享面板没目标时发链接'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '抖音分享面板只列最近分享过的人；开启后目标不在面板时会退化成'
+                    + '一条带视频链接的文字私信。默认关（宁可不发）。')))),
             h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
               h('div', { 'data-dy2-grouplabel': '' }, '值班会话 —— 侧栏显隐')),
             h('div', { 'data-dy2-field': '', 'data-wide': '' },
