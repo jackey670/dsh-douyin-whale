@@ -77,7 +77,7 @@
 |---|---|---|---|---|
 | R1 | 值班轮换真机验证 | DSH NEXT 开值班按 [docs/DUTY-ROTATE-VERIFY.md](docs/DUTY-ROTATE-VERIFY.md) 跑一轮；发现问题当场修 | 0.5–1 天 | ✅ v1.14.5（全链路跑通，遗留见 §5） |
 | R2 | 记忆迁移闭环 | `tools/memory-export.mjs`（export/push/verify → 私有仓 dsh-douyin-whale-memory）+ 笔记本恢复流程 | 0.5 天 | ✅ v1.14.5（dogfood PASS） |
-| R3 | 真实语料评测 | 手写 30 题问题集（留本机不入库）跑 `--questions`，按结果调检索权重 | 0.5–1 天 | ✅ 基线 v1.15.1（30 题：hit@1 87%、hit@4 100%、MRR 0.935、事实 5/5、私人过滤 1/1）。发现：负例「量子退火机的哈密顿量」因通用二元组误召 3 条 → 待调（短词/停用词过滤或分数下限）；`--questions` 文件加载器已支持 private/negative 语义 |
+| R3 | 真实语料评测 | 手写 30 题问题集（留本机不入库）跑 `--questions`，按结果调检索权重 | 0.5–1 天 | ✅ 基线 v1.15.1 → 调优 v1.15.2（负例误召修复：虚词二元组过滤；30 题 hit@1 87%/hit@4 100%/MRR 0.935 持平、负例 2/2）。`--questions` 支持 private/negative 语义 |
 | R4 | 面板记忆卡增强 | 情节 evidence 查看、待确认批量操作 | 1 天 | ✅ v1.15.0（看原话唯一出口 + 批量 20 条/一次写） |
 | R5 | DSH NEXT 市场发布 | npm pack → tarball → dshmarket，笔记本一键装新版 | 0.5 天 | 暂缓：dshmarket 只收 npm / 公网 GitHub Release 资产 / git 源，**不收本地包**；tarball 装法为「打包安装」会改 dataDir（data/ → ~/.dsh/douyin-whale）并丢 .venv，笔记本迁移代价大 |
 | R6 | 双机切换脚本 | `scripts/whale-switch.ps1`：停笔记本生产↔起本机值班 + IM_ALLOW_SEND 管理 | 0.5 天 | ✅ v1.15.1（`scripts/dev-duty.ps1 -Status/-Off/-On [-Yes]`，往返测试通过） |
