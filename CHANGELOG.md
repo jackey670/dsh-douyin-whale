@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.15.1 — 2026-11-26
+
+双机切换脚本（R6）+ 真实语料评测基线（R3）。
+
+### 新增
+
+- **`scripts/dev-duty.ps1`**（开发机值班开关）：
+  - `-Status`：只读显示 whaleEnabled / DOUYIN_IM_ALLOW_SEND / 本机调度器状态；
+  - `-Off`：whaleEnabled=false + 移除用户级发送开关（生产在笔记本时的常态）；
+  - `-On`：必须先带 `-Yes`，否则只打印前置清单（停笔记本生产 / wb2 网关 /
+    两机不能同跑 / 需完全重启）不做修改；
+  - 只改 desktop profile patch 里的 `whaleEnabled` 与用户级环境变量，原文本正则替换、
+    保留换行风格；往返测试（-On -Yes → -Off）后 patch 字节级还原。
+- **`tools/memory-eval.mjs` 文件题库**：`--questions` 的加载器支持内置题库的
+  `private`/`negative` 语义（expect 可为空；private 支持 includePrivate + 排位）。
+
+### 验证
+
+- 真实语料基线（30 题，问题文件留在本机 data/，不入库）：事件 hit@1 87%、
+  hit@4 100%、MRR 0.935；事实命中 5/5；私人过滤 1/1。
+- 发现（进 BACKLOG 待调）：负例「量子退火机的哈密顿量怎么写」因通用二元组
+  （的/写等）误召 3 条情节 → 短词/停用词过滤或相关性分数下限。
+- `dev-duty.ps1 -Status/-On/-Off` 实测输出正确，patch 往返无格式漂移。
+
 ## 1.15.0 — 2026-11-26
 
 面板记忆卡增强（R4）：情节看原话 + 待确认批量操作。

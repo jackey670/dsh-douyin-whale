@@ -308,13 +308,20 @@ function loadQuestionFile(file) {
   if (!Array.isArray(list) || !list.length) throw new Error('问题文件需要非空数组或 { questions: [] }');
   return list.map((x, i) => {
     if (!x || typeof x.q !== 'string' || !x.q.trim()) throw new Error(`第 ${i + 1} 题缺 q`);
-    const expectEpisode = x.expect_episode || (x.kind === 'event' ? x.expect : '') || '';
+    const expectEpisode = x.expect_episode
+      || ((x.kind === 'event' || x.kind === 'private') ? x.expect : '') || '';
     const expectFact = x.expect_fact || (x.kind === 'fact' ? x.expect : '') || '';
-    if (!expectEpisode && !expectFact) throw new Error(`第 ${i + 1} 题缺 expect_episode/expect_fact`);
+    // 文件题库也支持内置题库的 private/negative 语义（expect 为空）：
+    //   private → 默认不该注入私人条目；includePrivate 时按 expect 排位
+    //   negative → 检索不该误召任何情节
+    const explicitKind = x.kind === 'private' || x.kind === 'negative' ? x.kind : '';
+    if (!explicitKind && !expectEpisode && !expectFact) {
+      throw new Error(`第 ${i + 1} 题缺 expect_episode/expect_fact`);
+    }
     return {
-      kind: expectFact ? 'fact' : 'event',
+      kind: explicitKind || (expectFact ? 'fact' : 'event'),
       q: x.q,
-      expect: expectFact || expectEpisode,
+      expect: expectFact || expectEpisode || null,
       includePrivate: Boolean(x.includePrivate || x.include_private),
     };
   });

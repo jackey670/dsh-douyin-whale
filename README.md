@@ -334,6 +334,12 @@ llm-pi-ai:
 四件套，缺一宿主会写坏日志）；完成检测轮询 `agent.status`，但**回读私信才是
 标记已回复的真判据**。
 
+**双机切换（生产在笔记本，开发机只开发）**：开发机上用
+`pwsh -File scripts/dev-duty.ps1 -Status|-Off|-On [-Yes]` 管值班开关——
+它只改 desktop profile patch 的 `whaleEnabled` 和用户级 `DOUYIN_IM_ALLOW_SEND`。
+`-On` 不给 `-Yes` 只打印前置检查清单、不做修改；改完必须**完全退出**再打开
+DSH NEXT（关窗口不等于退出）。同一抖音账号**不能两台机器同时跑**。
+
 ### 暂不支持的
 
 - **自动恢复登录**：抖音在服务端作废旧会话时，本地 cookie 还在、页面已经要扫码；
