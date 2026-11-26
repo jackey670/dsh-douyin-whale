@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.16.1 — 2026-11-26
+
+交付与评测工具化：Release 附件一键打，真实语料评测一条命令跑。
+
+### 新增
+
+- **`tools/release-pack.mjs`**（`npm run release:pack`）：`npm pack` 按
+  `files` 白名单打 tarball（72 个文件，data/、cookies、credentials 均不在内），
+  同时生成 `.sha256`，再 `gh release upload` 挂到对应 GitHub Release；
+  `--no-upload` 只打包，`--tag` 指定版本。Windows 下用 `cmd /c npm`，
+  不触发 shell 参数拼接告警。
+- **README「从 Release 装打包版」**：tarball + 校验和安装步骤，并写明打包安装的
+  三处差异（dataDir 变 `~/.dsh/douyin-whale`、不带 `.venv` 需 `pythonPath`、
+  升级 = 重新 add）。
+- **`docs/UPGRADE.md`**：生产机升级/回滚/记忆恢复手册——升级前停值班与导出记忆、
+  checkout 与打包两种升级路径、升级后自检清单、回滚、手工恢复 `~/.dsh` 记忆、
+  常见坑（TEMP 权限、发送闸环境变量、双机同账号）。
+- **`tools/memory-eval-gen.mjs`**（`npm run memory:eval:gen`）：从本地真实记忆
+  生成评测问题集（事件/事实/私人/负例），只输出计数，题目写入 `data/`（gitignored）。
+  `npm run memory:eval:local` 直接跑生成好的问题集。
+
+### 验证
+
+- 本机真实语料 30 题复跑：hit@1 87.0%、hit@4 100%、MRR 0.935、事实 5/5、
+  负例 2/2、私人过滤 1/1。
+- `npm run check`（+2 个新工具语法检查）、`npm test` 19 组全绿；
+  tarball 内容扫描无敏感路径；已上传 v1.16.0 资产验证 release-pack 全链路。
+- client.js 仅版本串改为 `v1.16.1·b26`（无 UI 改动，PANEL_BUILD 不增）。
+
 ## 1.16.0 — 2026-11-26
 
 记忆体检（R10）：记忆库出问题时看得见、点一下就能修索引。

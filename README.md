@@ -463,7 +463,39 @@ DSH。自检：
 ./scripts/selfcheck.sh          # Windows: .\scripts\selfcheck.ps1
 ```
 
-### 4.（可选）起 HTTP 服务
+### 4.（可选）从 Release 装打包版
+
+不想 clone 仓库时，用 GitHub Release 里的 npm tarball（`dsh-douyin-whale-<版本>.tgz`，
+由 `npm run release:pack` 打包并附上 `.sha256`）：
+
+```bash
+curl -LO https://github.com/jackey670/dsh-douyin-whale/releases/download/v1.16.1/dsh-douyin-whale-1.16.1.tgz
+curl -LO https://github.com/jackey670/dsh-douyin-whale/releases/download/v1.16.1/dsh-douyin-whale-1.16.1.tgz.sha256
+sha256sum -c dsh-douyin-whale-1.16.1.tgz.sha256      # Windows: certutil -hashfile <文件> SHA256
+
+dsh plugin --profile desktop add file:$PWD/dsh-douyin-whale-1.16.1.tgz
+```
+
+打包安装和 checkout 安装有三处不同，装之前先看清楚：
+
+- **dataDir 变成 `~/.dsh/douyin-whale`**（登录态/队列/日志/记忆都在这），不再是
+  仓库里的 `data/`。想固定位置就在插件配置里写 `dataDir`。
+- **包里不带 `.venv`**。先建一个自己的环境，再把 `pythonPath`（插件配置）或
+  `DOUYIN_PYTHON` 指过去：
+
+  ```bash
+  python3 -m venv ~/.dsh/douyin-whale/venv
+  ~/.dsh/douyin-whale/venv/bin/pip install -r <插件包目录>/python/requirements.txt
+  ```
+
+- **升级 = 下载新 tarball 再 `add` 一次**。`~/.dsh/douyin-whale` 不在包内，登录态、
+  队列和记忆都保留；确认没问题再删旧 tarball。
+
+dshmarket 也认公网 GitHub Release 资产，市场装的就是这同一份 tarball。
+
+升级、回滚和记忆恢复的完整步骤见 [docs/UPGRADE.md](docs/UPGRADE.md)。
+
+### 5.（可选）起 HTTP 服务
 
 ```bash
 ./scripts/run-http.sh           # Windows: .\scripts\run-http.ps1
