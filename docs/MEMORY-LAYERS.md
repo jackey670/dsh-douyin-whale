@@ -2,8 +2,8 @@
 
 > 状态：Phase 2A 已实现（v1.14.1）；Phase 3a 评测/面板（v1.14.2）、
 > Phase 3b 周反思（v1.14.3）、Phase 2B 值班会话轮换（v1.14.4）已做；
-> 记忆星图 P1/P2（v1.17.0 / v1.18.0）已完成；真实 DSH 值班宿主还需真机验证。
-> 日期：2026-11-11（v1.18.0 更新于 2026-11-26）
+> 记忆星图 P1/P2/P3（v1.17.0 / v1.18.0 / v1.19.0）已完成；真实 DSH 值班宿主还需真机验证。
+> 日期：2026-11-11（v1.19.0 更新于 2026-11-27）
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
 ## 0. 实现进度
@@ -17,7 +17,7 @@
 | Phase 3a 评测 + 面板 | ✅ v1.14.2：`tools/memory-eval.mjs` 30 题；`/memory/overview|search|pin|pending|item`；面板记忆卡；低置信待确认 |
 | Phase 3b 周反思 | ✅ v1.14.3：`lib/memory_reflect.js`；最近 7 天情节 → arcs；私人叙事线默认不注入；面板显示叙事线 |
 | Phase 3c 向量召回 | ⬜ 暂不上：合成集 hit@4 100%，等真实问题集出现缺口再评估 |
-| Phase 4 记忆星图 | ✅ v1.17.0 P1（图构建 + 3D 面板）、v1.18.0 P2（回忆强化/共现边/轨迹回放）；图扩散回忆等真实共现数据攒够再上 |
+| Phase 4 记忆星图 | ✅ v1.17.0 P1（图构建 + 3D 面板）、v1.18.0 P2（回忆强化/共现边/轨迹回放）、v1.19.0 P3（思维链查询/联想链/心情星）；图扩散回忆进提示词等真实共现数据攒够再上 |
 
 
 ## 1. 要解决的问题
@@ -180,6 +180,23 @@ Phase 1 用 `index.json`：
 - 星图亮度用强化后的强度：`s0 = 0.5 + importance/10 + min(0.25, 0.04·uses)`，
   衰减从 `last_used_at` 重新起算——越被想起越亮，长期不用的星自然变暗。
 
+### 4.6 思维链（v1.19.0）
+
+`lib/memory_think.js` 的 `thinkChain({graph, seed|q, hops, limit})` 在星图上做
+确定性的激活扩散，用来回答「从这条记忆出发，还会想到什么」：
+
+- 种子：显式 `seed` 节点，或用 `q` 的 token 覆盖率匹配出的最多 5 个节点；
+- 扩散：`score = 父节点分 × 边权 × (0.55 + 0.45w)`，边权
+  `co_recall/core 0.9 · evidence 0.85 · part_of 0.8 · about 0.7 · related 0.55 ·
+  supersedes 0.35`；每跳只保留前 24 个节点继续扩散，防止大 hub 点亮全图；
+- 同一节点保留最高分路径（所以「强关联的两跳」可能压过「弱关联的一跳」），
+  默认 2 跳、最多 3 跳；
+- 输出 `{id,type,label,sub,hop,score,via,viaKind}`，**只带摘要与路径**，
+  evidence 原话不下发；私人节点是否出现完全继承星图。
+
+目前只服务查询/可视化（`/memory/think` + 面板「联想」），**没接进提示词召回**；
+等真实值班攒出 `co_recall` 数据，再用 30 题评测决定图扩散要不要默认开。
+
 ## 5. 写入路径
 
 ### 5.1 每轮（轻量）
@@ -322,11 +339,14 @@ Token 预算（不含任务/persona）：
 - `GET /memory/health?staleDays=`：只读六项诊断（见 §10.2），`staleDays` 夹 7–365，
   缺省 90。
 - `GET /memory/graph?private=1&max=&minSim=`：只读星图（v1.17.0）。节点 = 自我/
-  性格/主人/事实/情节/叙事线/主题，边 = core/about/evidence/part_of/related/
-  supersedes/co_recall（v1.18.0）；节点只带摘要与详情，evidence 原话只参与相似度
-  计算、不下发。私人条目默认过滤，`private=1` 才出现。
+  性格/主人/心情（v1.19.0）/事实/情节/叙事线/主题，边 = core/about/evidence/
+  part_of/related/supersedes/co_recall（v1.18.0）；节点只带摘要与详情，evidence
+  原话只参与相似度计算、不下发。私人条目默认过滤，`private=1` 才出现。
 - `GET /memory/traces?limit=`：最近想起记录（v1.18.0），`limit` 夹 1–100、缺省 20；
   只回 `{id, at, trigger, ids}`，不含摘要/原话。
+- `GET /memory/think?q=&seed=&hops=&limit=&private=1`：思维链（v1.19.0）。
+  `q`/`seed` 至少一个（否则 400），`hops` 夹 1–3、`limit` 夹 5–30；只回节点摘要
+  与路径（`via/viaKind`），不含原话。
 - `POST /memory/reindex`：按当前情节重建倒排索引（幂等维护动作，不改原文）。
 - `DELETE /memory/item?id=`：删除事实（软删）或情节（移出 jsonl 并重建索引）；
   私信/日记原文保留。
@@ -340,6 +360,9 @@ Token 预算（不含任务/persona）：
   度数，颜色按类型。
 - 星图「最近想起」（v1.18.0）：星图下方 chips 列出最近召回；点一条把该轮的星和
   它们之间的边金色高亮，再点取消。数据只来自 `/memory/traces`，不加载正文。
+- 星图「联想」（v1.19.0）：点星后详情里的「联想」按钮调用 `/memory/think`，
+  展开「联想链 · N 个节点（M 跳内）」；每行标起点/跳数，点一行选中那颗星并保留
+  链条。心情在星图里单独一颗星（v1.19.0），图例新增「心情」。
 - 日志只记 id/数量/耗时；正文永不进日志。
 
 ## 10. 测试与验收
@@ -424,7 +447,7 @@ npm run memory:eval:local   # 用生成的问题集跑评测
 | Phase 3a | 30 题评测 + 面板记忆浏览器 + 待确认 | ✅ v1.14.2 |
 | Phase 3b | 周反思 arcs | ✅ v1.14.3 |
 | Phase 3c | 可选本地向量召回 | ⬜ 暂不上（等真实问题集缺口） |
-| Phase 4 | 记忆星图（图构建/3D 面板/回忆强化/轨迹回放） | ✅ v1.17.0–v1.18.0 |
+| Phase 4 | 记忆星图（图构建/3D 面板/回忆强化/轨迹回放/思维链/心情星） | ✅ v1.17.0–v1.19.0 |
 
 建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2A，v1.14.2 = Phase 3a，
 v1.14.3 = Phase 3b，v1.14.4 = Phase 2B。下一版先做值班轮换真机验证。

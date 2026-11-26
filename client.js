@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback, useRef } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 28;
+    const PANEL_BUILD = 29;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -144,6 +144,12 @@ window.__ModuleLoader__.load({
 [data-dy2-star-detail] [data-dy2-sub]{color:#94a3b8;}
 [data-dy2-star-hint]{position:absolute;right:10px;bottom:8px;z-index:1;font-size:10px;
   color:rgba(148,163,184,.55);pointer-events:none;}
+[data-dy2-chain]{margin-top:6px;display:flex;flex-direction:column;gap:2px;}
+[data-dy2-chain-item]{display:flex;gap:8px;align-items:baseline;text-align:left;width:100%;
+  background:none;border:0;color:#cbd5e1;font:inherit;font-size:11px;line-height:1.5;
+  padding:2px 4px;border-radius:4px;cursor:pointer;}
+[data-dy2-chain-item]:hover{background:rgba(148,163,184,.14);}
+[data-dy2-chain-hop]{flex:none;min-width:34px;font-size:9px;color:#fbbf24;opacity:.85;}
 `;
 
     /* ── 错误边界：面板任何一块抛错，都只塌这一页 ─────────────────────── */
@@ -187,6 +193,7 @@ window.__ModuleLoader__.load({
       self: { label: '自我', color: '#f8fafc' },
       owner: { label: '主人', color: '#fda4af' },
       trait: { label: '性格', color: '#a78bfa' },
+      mood: { label: '心情', color: '#f9a8d4' },
       fact: { label: '事实', color: '#fbbf24' },
       episode: { label: '情节', color: '#5eead4' },
       arc: { label: '叙事线', color: '#c084fc' },
@@ -300,10 +307,13 @@ window.__ModuleLoader__.load({
       const [selected, setSelected] = useState(null);
       const [evidence, setEvidence] = useState(null);
       const [evBusy, setEvBusy] = useState(false);
+      const [think, setThink] = useState(null);      // 思维链 { chain: [] }
+      const [thinkBusy, setThinkBusy] = useState(false);
 
-      const pick = useCallback(async (node) => {
+      const pick = useCallback(async (node, keepThink = false) => {
         setSelected(node);
         setEvidence(null);
+        if (!keepThink) setThink(null);
         if (!node || node.type !== 'episode') return;
         setEvBusy(true);
         try {
@@ -319,6 +329,20 @@ window.__ModuleLoader__.load({
       }, []);
       pickRef.current = pick;
       selectedRef.current = selected?.id || null;
+
+      const loadThink = useCallback(async (node) => {
+        if (!node) return;
+        setThinkBusy(true);
+        try {
+          const j = await jget(`/memory/think?seed=${encodeURIComponent(node.id)}&limit=10`
+            + `&private=${graph?.stats?.includePrivate ? 1 : 0}`);
+          setThink(j);
+        } catch (e) {
+          setThink({ error: String(e?.message ?? e) });
+        } finally {
+          setThinkBusy(false);
+        }
+      }, [graph]);
 
       useEffect(() => {
         const canvas = canvasRef.current;
@@ -579,6 +603,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         setSelected(null);
         setEvidence(null);
+        setThink(null);
       }, [graph]);
 
       useEffect(() => {
@@ -622,7 +647,10 @@ window.__ModuleLoader__.load({
                   ? ` · 强度 ${Math.round(sel.strength * 100)}%` : '')))),
           h('div', { 'data-dy2-row': '', style: { marginTop: '6px' } },
             h('button', {
-              'data-dy2-btn': '', onClick: () => { setSelected(null); setEvidence(null); },
+              'data-dy2-btn': '', disabled: thinkBusy, onClick: () => loadThink(sel),
+            }, thinkBusy ? '联想中…' : '联想'),
+            h('button', {
+              'data-dy2-btn': '', onClick: () => { setSelected(null); setEvidence(null); setThink(null); },
             }, '关闭')),
           evBusy ? h('div', { 'data-dy2-sub': '' }, '读原话…') : null,
           evidence?.error ? h('div', { 'data-dy2-sub': '' }, evidence.error) : null,
@@ -634,7 +662,22 @@ window.__ModuleLoader__.load({
                   ` · ${ev.source === 'diary' ? '日记' : ev.source === 'dm' ? '私信' : (ev.source || '来源')}`
                   + (ev.at ? ` · ${fmtWhen(ev.at)}` : '')))))
             : (evidence && !evidence.error
-              ? h('div', { 'data-dy2-sub': '' }, '这条没有引文') : null))
+              ? h('div', { 'data-dy2-sub': '' }, '这条没有引文') : null),
+          think?.error ? h('div', { 'data-dy2-sub': '' }, think.error) : null,
+          think?.chain?.length
+            ? h('div', { 'data-dy2-chain': '' },
+              h('div', { 'data-dy2-sub': '' },
+                `联想链 · ${think.chain.length} 个节点（${think.stats?.hops ?? 2} 跳内，按关联强度）`),
+              think.chain.slice(0, 9).map((c) => h('button', {
+                'data-dy2-chain-item': '',
+                key: `th:${c.id}`,
+                title: c.viaKind ? `经由 ${c.viaKind} 想起` : '起点',
+                onClick: () => pick(graph.nodes.find((n) => n.id === c.id) || null, true),
+              },
+              h('span', { 'data-dy2-chain-hop': '' }, c.hop === 0 ? '起点' : `${c.hop} 跳`),
+              h('span', {}, c.label))))
+            : (think && !think.error
+              ? h('div', { 'data-dy2-sub': '' }, '这条附近没有其它记忆') : null))
         : h('div', { 'data-dy2-star-hint': '' }, '拖动旋转 · 滚轮缩放 · 点击星星看详情'),
       );
     }
@@ -1166,7 +1209,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.18.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.19.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
