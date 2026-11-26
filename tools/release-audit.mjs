@@ -87,7 +87,7 @@ else ok(`面板版本 = ${version}`);
 const testFiles = ['tests/test_safety.py', 'tests/test_readback.py', 'tests/test_send_gate.py',
   'tests/test_fixture.py', 'scheduler/memory.test.mjs', 'lib/panel.test.mjs',
   'lib/panel_api.test.mjs', 'lib/duty_agent.test.mjs', 'lib/whale_tick.test.mjs',
-  'lib/mood.test.mjs', 'lib/pet_bridge.test.mjs', 'lib/memory_layers.test.mjs',
+  'lib/mood.test.mjs', 'lib/pet_bridge.test.mjs', 'lib/memory_layers.test.mjs', 'lib/memory_graph.test.mjs',
   'lib/memory_consolidate.test.mjs', 'lib/memory_reflect.test.mjs',
   'lib/session_rotate.test.mjs', 'tools/memory-eval.mjs', 'tools/memory-export.test.mjs', 'tools/release-pack.test.mjs', 'tools/memory-eval-gen.test.mjs'];
 for (const f of testFiles) {

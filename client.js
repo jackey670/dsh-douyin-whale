@@ -18,10 +18,10 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     const React = require('react');
     const h = React.createElement;
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useRef } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 26;
+    const PANEL_BUILD = 27;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -123,6 +123,27 @@ window.__ModuleLoader__.load({
 [data-dy2-quote-block]{margin-top:6px;padding:6px 9px;border-left:2px solid var(--dsw-alias-border-strong,rgba(128,128,128,.45));
   border-radius:4px;background:var(--dsw-alias-bg-secondary,rgba(128,128,128,.07));}
 [data-dy2-quote]{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#b6bac0);margin:2px 0;}
+[data-dy2-star]{position:relative;height:420px;border-radius:12px;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 45%,rgba(56,189,248,.10),rgba(2,6,23,.55) 58%,rgba(2,6,23,.9));
+  border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.08));}
+[data-dy2-star][data-full="1"]{position:fixed;inset:8px;height:auto;z-index:90;
+  box-shadow:0 24px 80px rgba(0,0,0,.6);
+  background:radial-gradient(ellipse at 50% 45%,rgba(56,189,248,.14),rgba(2,6,23,0) 62%),#020617;}
+[data-dy2-star] canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;}
+[data-dy2-star] canvas:active{cursor:grabbing;}
+[data-dy2-star-hud]{position:absolute;left:10px;top:8px;display:flex;gap:12px;align-items:center;
+  flex-wrap:wrap;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,#9aa0a6);
+  pointer-events:none;z-index:2;}
+[data-dy2-star-legend]{display:inline-flex;align-items:center;gap:5px;}
+[data-dy2-star-dot]{width:7px;height:7px;border-radius:50%;display:inline-block;}
+[data-dy2-star-exit]{position:absolute;right:10px;top:8px;z-index:3;}
+[data-dy2-star-detail]{position:absolute;left:10px;bottom:10px;right:10px;z-index:2;
+  padding:9px 11px;border-radius:10px;max-height:46%;overflow:auto;
+  background:rgba(2,6,23,.72);border:1px solid rgba(148,163,184,.28);backdrop-filter:blur(6px);}
+[data-dy2-star-detail] [data-dy2-kv]{color:#e2e8f0;}
+[data-dy2-star-detail] [data-dy2-sub]{color:#94a3b8;}
+[data-dy2-star-hint]{position:absolute;right:10px;bottom:8px;z-index:1;font-size:10px;
+  color:rgba(148,163,184,.55);pointer-events:none;}
 `;
 
     /* ── 错误边界：面板任何一块抛错，都只塌这一页 ─────────────────────── */
@@ -158,6 +179,455 @@ window.__ModuleLoader__.load({
       return Number.isNaN(d.getTime()) ? String(iso) :
         `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     };
+
+    /* ── 记忆星图 ───────────────────────────────────────────────────────
+       纯 canvas 3D：轨道相机 + 透视投影 + 光晕精灵，不引第三方库。
+       数据由 /memory/graph 下发；这里只负责摆位、画、点选。 */
+    const STAR_TYPE = {
+      self: { label: '自我', color: '#f8fafc' },
+      owner: { label: '主人', color: '#fda4af' },
+      trait: { label: '性格', color: '#a78bfa' },
+      fact: { label: '事实', color: '#fbbf24' },
+      episode: { label: '情节', color: '#5eead4' },
+      arc: { label: '叙事线', color: '#c084fc' },
+      topic: { label: '主题', color: '#38bdf8' },
+    };
+    const STAR_EDGE = {
+      core: '#f5d0a9', about: '#38bdf8', evidence: '#fbbf24',
+      part_of: '#c084fc', related: '#64748b', supersedes: '#ef4444', co_recall: '#fb923c',
+    };
+    const starHash = (s) => {
+      let x = 2166136261;
+      for (let i = 0; i < String(s).length; i += 1) {
+        x ^= String(s).charCodeAt(i);
+        x = Math.imul(x, 16777619);
+      }
+      return x >>> 0;
+    };
+    const starRand = (seed) => {
+      let s = seed >>> 0;
+      return () => {
+        s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+        return s / 4294967296;
+      };
+    };
+    const hexRgba = (hex, a) => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+      if (!m) return `rgba(148,163,184,${a})`;
+      const n = parseInt(m[1], 16);
+      return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+    };
+    const starSprites = new Map();
+    const starSprite = (color) => {
+      if (starSprites.has(color)) return starSprites.get(color);
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255,255,255,.95)');
+      grad.addColorStop(0.22, color);
+      grad.addColorStop(0.55, hexRgba(color, 0.32));
+      grad.addColorStop(1, hexRgba(color, 0));
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 64);
+      starSprites.set(color, c);
+      return c;
+    };
+
+    /** 轨道布局：按类型分层，情节按主标签聚成星座；时间布局把 x 换成时间轴。 */
+    const starLayout = (nodes, mode) => {
+      const pos = new Map();
+      const rand = starRand(20261126);
+      const put = (id, x, y, z) => pos.set(id, { x, y, z });
+      const list = (type) => nodes.filter((n) => n.type === type);
+      put('self', 0, 0, 0);
+      put('owner', 0.16, 0.1, 0.08);
+      const ring = (arr, r, tilt = 0.38) => arr.forEach((n, i) => {
+        const a = (i / Math.max(1, arr.length)) * Math.PI * 2 + rand() * 0.12;
+        put(n.id, r * Math.cos(a), Math.sin(a) * r * tilt, r * Math.sin(a));
+      });
+
+      if (mode === 'time') {
+        const times = nodes
+          .map((n) => Date.parse(n.ts || ''))
+          .filter((t) => Number.isFinite(t));
+        const min = times.length ? Math.min(...times) : 0;
+        const max = times.length ? Math.max(...times) : min + 1;
+        const span = Math.max(1, max - min);
+        for (const n of nodes) {
+          const t = Date.parse(n.ts || '');
+          const x = Number.isFinite(t) ? ((t - min) / span) * 2.5 - 1.25 : -1.42;
+          put(n.id,
+            x,
+            ((starHash(`${n.id}y`) % 1000) / 1000 - 0.5) * 0.9,
+            ((starHash(`${n.id}z`) % 1000) / 1000 - 0.5) * 0.9);
+        }
+        return pos;
+      }
+
+      const tagCount = new Map();
+      for (const n of list('episode')) {
+        for (const t of n.tags || []) tagCount.set(t, (tagCount.get(t) || 0) + 1);
+      }
+      const tagAngle = new Map(
+        [...tagCount.keys()].sort().map((t, i) => [t, 0.6 + i * 2.39996]),
+      );
+      const angleOf = (tag) => {
+        if (!tagAngle.has(tag)) tagAngle.set(tag, rand() * Math.PI * 2);
+        return tagAngle.get(tag);
+      };
+      ring(list('trait'), 0.42, 0.5);
+      ring(list('fact'), 0.78, 0.36);
+      ring(list('arc'), 1.02, 0.3);
+      ring(list('topic'), 1.24, 0.34);
+      for (const n of list('episode')) {
+        const tags = [...(n.tags || [])].sort((a, b) => (tagCount.get(b) || 0) - (tagCount.get(a) || 0));
+        const base = tags.length ? angleOf(tags[0]) : rand() * Math.PI * 2;
+        const a = base + (((starHash(n.id) % 1000) / 1000) - 0.5) * 0.55;
+        const r = 1.45 + ((starHash(`${n.id}r`) % 1000) / 1000) * 0.55;
+        const y = (((starHash(`${n.id}y`) % 1000) / 1000) - 0.5) * 0.72;
+        put(n.id, r * Math.cos(a), y, r * Math.sin(a));
+      }
+      return pos;
+    };
+
+    function StarMap({ graph, layout, full, onToggleFull }) {
+      const canvasRef = useRef(null);
+      const wrapRef = useRef(null);
+      const engineRef = useRef(null);
+      const pickRef = useRef(null);
+      const selectedRef = useRef(null);
+      const [selected, setSelected] = useState(null);
+      const [evidence, setEvidence] = useState(null);
+      const [evBusy, setEvBusy] = useState(false);
+
+      const pick = useCallback(async (node) => {
+        setSelected(node);
+        setEvidence(null);
+        if (!node || node.type !== 'episode') return;
+        setEvBusy(true);
+        try {
+          const j = await jget(`/memory/episode?id=${encodeURIComponent(node.id)}`
+            + `&private=${node.private ? 1 : 0}`);
+          if (j.ok) setEvidence(j.episode);
+          else setEvidence({ error: j.error || '这条原话打不开' });
+        } catch (e) {
+          setEvidence({ error: String(e?.message ?? e) });
+        } finally {
+          setEvBusy(false);
+        }
+      }, []);
+      pickRef.current = pick;
+      selectedRef.current = selected?.id || null;
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        const wrap = wrapRef.current;
+        if (!canvas || !wrap || !graph?.nodes?.length) return undefined;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
+        const nodes = graph.nodes;
+        const edges = graph.edges || [];
+        const pos = starLayout(nodes, layout);
+        const cam = { yaw: 0.62, pitch: 0.3, zoom: 1 };
+        const bg = Array.from({ length: 150 }, () => ({
+          x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.4,
+          p: Math.random() * Math.PI * 2,
+        }));
+        let W = 600; let H = 420; let dpr = 1;
+        let raf = 0; let last = 0;
+        let hovered = null;
+        let selectedId = selectedRef.current;
+        let dragging = false; let moved = 0; let lx = 0; let ly = 0;
+        const screen = new Map();
+
+        const fit = () => {
+          const rect = wrap.getBoundingClientRect();
+          W = Math.max(240, Math.round(rect.width));
+          H = Math.max(220, Math.round(rect.height));
+          dpr = Math.min(2, window.devicePixelRatio || 1);
+          canvas.width = Math.round(W * dpr);
+          canvas.height = Math.round(H * dpr);
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        };
+
+        const project = (p) => {
+          const cy = Math.cos(cam.yaw); const sy = Math.sin(cam.yaw);
+          let x = p.x * cy - p.z * sy;
+          let z = p.x * sy + p.z * cy;
+          const cp = Math.cos(cam.pitch); const sp = Math.sin(cam.pitch);
+          const y = p.y * cp - z * sp;
+          z = p.y * sp + z * cp;
+          const depth = z + 3.4;
+          if (depth <= 0.25) return null;
+          const scale = Math.min(W, H) * 0.52 * cam.zoom * (1.9 / depth);
+          return { x: W / 2 + x * scale, y: H / 2 + y * scale, depth, scale };
+        };
+
+        const nearest = (mx, my) => {
+          let best = null; let bestD = Infinity;
+          for (const n of nodes) {
+            const s = screen.get(n.id);
+            if (!s) continue;
+            const d = Math.hypot(s.x - mx, s.y - my);
+            if (d < (s.hit || 10) && d < bestD) { best = n; bestD = d; }
+          }
+          return best;
+        };
+
+        const draw = (t) => {
+          ctx.clearRect(0, 0, W, H);
+          for (const s of bg) {
+            const a = 0.12 + 0.16 * (0.5 + 0.5 * Math.sin(t / 1400 + s.p));
+            ctx.fillStyle = `rgba(190,215,255,${a})`;
+            ctx.fillRect(s.x * W, s.y * H, s.r, s.r);
+          }
+          const proj = new Map();
+          for (const n of nodes) {
+            const p = pos.get(n.id);
+            const q = p ? project(p) : null;
+            if (q) proj.set(n.id, q);
+          }
+          for (const e of edges) {
+            const A = proj.get(e.a); const B = proj.get(e.b);
+            if (!A || !B) continue;
+            const linked = selectedId && (e.a === selectedId || e.b === selectedId);
+            let alpha = (0.07 + 0.18 * (Number(e.w) || 0.5)) * Math.min(1, 2.6 / Math.max(0.6, (A.depth + B.depth) / 2));
+            if (hovered && (e.a === hovered || e.b === hovered)) alpha += 0.22;
+            if (selectedId) alpha = linked ? alpha + 0.32 : alpha * 0.3;
+            ctx.strokeStyle = hexRgba(STAR_EDGE[e.kind] || '#94a3b8', Math.min(0.85, alpha));
+            ctx.lineWidth = linked ? 1.7 : 0.7 + (Number(e.w) || 0.5) * 0.7;
+            ctx.setLineDash(e.kind === 'related' ? [3, 5] : []);
+            ctx.beginPath();
+            ctx.moveTo(A.x, A.y);
+            ctx.lineTo(B.x, B.y);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+          screen.clear();
+          const order = nodes.filter((n) => proj.has(n.id))
+            .sort((a, b) => proj.get(b.id).depth - proj.get(a.id).depth);
+          ctx.globalCompositeOperation = 'lighter';
+          for (const n of order) {
+            const q = proj.get(n.id);
+            const meta = STAR_TYPE[n.type] || { color: '#94a3b8' };
+            const strength = n.state === 'pinned' ? 1 : Math.max(0.12, Number(n.strength) || 0.7);
+            let base = n.type === 'self' ? 9
+              : n.type === 'owner' ? 7
+                : n.type === 'arc' ? 6 + Math.min(5, n.episodeCount || 0)
+                  : n.type === 'fact' ? 4.6 + (Number(n.confidence) || 0) * 2.4
+                    : n.type === 'episode' ? 3.4 + (Number(n.importance) || 2) * 0.9
+                      : n.type === 'trait' ? 3.6
+                        : 3.8 + Math.min(8, Number(n.count) || 0) * 0.45;
+            base *= Math.min(1.8, 2.7 / q.depth) * cam.zoom;
+            const alpha = (0.3 + 0.7 * strength) * (n.private ? 0.55 : 1) * Math.min(1, 3.2 / q.depth);
+            ctx.globalAlpha = Math.min(0.95, alpha);
+            const sp = starSprite(meta.color);
+            ctx.drawImage(sp, q.x - base * 2.2, q.y - base * 2.2, base * 4.4, base * 4.4);
+            ctx.globalAlpha = Math.min(1, alpha + 0.28);
+            ctx.fillStyle = meta.color;
+            ctx.beginPath();
+            ctx.arc(q.x, q.y, Math.max(1.1, base * 0.4), 0, Math.PI * 2);
+            ctx.fill();
+            if (n.state === 'pinned' || selectedId === n.id || hovered === n.id) {
+              ctx.globalAlpha = selectedId === n.id ? 0.95 : 0.55;
+              ctx.strokeStyle = meta.color;
+              ctx.lineWidth = selectedId === n.id ? 1.6 : 1;
+              ctx.beginPath();
+              ctx.arc(q.x, q.y, base + 3, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            screen.set(n.id, { ...q, hit: Math.max(11, base + 5) });
+          }
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 1;
+
+          const want = new Set(['self', 'owner']);
+          if (selectedId) want.add(selectedId);
+          if (hovered) want.add(hovered);
+          for (const n of nodes) {
+            if (n.type === 'arc' || n.type === 'topic') want.add(n.id);
+            else if (cam.zoom > 1.2 && (Number(n.degree) || 0) >= 3) want.add(n.id);
+          }
+          const prio = (n) => (selectedId === n.id ? 0
+            : hovered === n.id ? 1
+              : n.type === 'self' ? 2
+                : n.type === 'owner' ? 3
+                  : n.type === 'arc' ? 4
+                    : n.type === 'topic' ? 5 : 6);
+          const labels = nodes.filter((n) => want.has(n.id) && proj.has(n.id))
+            .sort((a, b) => prio(a) - prio(b) || String(a.id).localeCompare(String(b.id)));
+          const placed = [];
+          ctx.font = '11px ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+          ctx.textBaseline = 'middle';
+          for (const n of labels) {
+            const q = proj.get(n.id);
+            const text = String(n.label || '');
+            if (!text) continue;
+            const w = ctx.measureText(text).width;
+            const x = Math.min(W - w - 8, Math.max(6, q.x + 8));
+            const y = Math.max(12, Math.min(H - 8, q.y - 10));
+            const box = { x: x - 4, y: y - 9, w: w + 8, h: 18 };
+            const hit = placed.some((b) => box.x < b.x + b.w + 4 && b.x < box.x + box.w + 4
+              && box.y < b.y + b.h + 2 && b.y < box.y + box.h + 2);
+            if (hit) continue;
+            placed.push(box);
+            ctx.fillStyle = 'rgba(2,6,23,.62)';
+            ctx.fillRect(box.x, box.y, box.w, box.h);
+            ctx.fillStyle = selectedId === n.id ? '#f8fafc' : 'rgba(226,232,240,.86)';
+            ctx.fillText(text, x, y);
+          }
+        };
+
+        let drawErrLogged = false;
+        const tick = (t) => {
+          try {
+            if (t - last >= 32) { draw(t); last = t; }
+          } catch (err) {
+            if (!drawErrLogged) {
+              drawErrLogged = true;
+              console.error('[star] draw failed', err);
+            }
+          }
+          raf = requestAnimationFrame(tick);
+        };
+
+        const onDown = (e) => {
+          dragging = true; moved = 0;
+          lx = e.clientX; ly = e.clientY;
+          try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        };
+        const onMove = (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          if (dragging) {
+            const dx = e.clientX - lx; const dy = e.clientY - ly;
+            moved += Math.abs(dx) + Math.abs(dy);
+            cam.yaw += dx * 0.006;
+            cam.pitch = Math.max(-1.15, Math.min(1.15, cam.pitch + dy * 0.006));
+            lx = e.clientX; ly = e.clientY;
+            draw(performance.now());
+          } else {
+            const n = nearest(mx, my);
+            hovered = n?.id || null;
+            canvas.style.cursor = n ? 'pointer' : 'grab';
+          }
+        };
+        const onUp = (e) => {
+          dragging = false;
+        };
+        const onClick = (e) => {
+          if (moved >= 5) return;
+          const rect = canvas.getBoundingClientRect();
+          const n = nearest(e.clientX - rect.left, e.clientY - rect.top);
+          pickRef.current?.(n || null);
+        };
+        const onWheel = (e) => {
+          e.preventDefault();
+          cam.zoom = Math.max(0.45, Math.min(3.2, cam.zoom * Math.exp(-e.deltaY * 0.0012)));
+          draw(performance.now());
+        };
+        const onDbl = () => { cam.yaw = 0.62; cam.pitch = 0.3; cam.zoom = 1; draw(performance.now()); };
+        const onLeave = () => { hovered = null; };
+
+        canvas.addEventListener('pointerdown', onDown);
+        canvas.addEventListener('pointermove', onMove);
+        canvas.addEventListener('pointerup', onUp);
+        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('pointerleave', onLeave);
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        canvas.addEventListener('dblclick', onDbl);
+        const onResize = () => { fit(); draw(performance.now()); };
+        const ro = new ResizeObserver(onResize);
+        ro.observe(wrap);
+        fit();
+        draw(performance.now());
+        raf = requestAnimationFrame(tick);
+        engineRef.current = {
+          setSelected: (id) => { selectedId = id || null; },
+          reset: () => { cam.yaw = 0.62; cam.pitch = 0.3; cam.zoom = 1; },
+        };
+        return () => {
+          cancelAnimationFrame(raf);
+          ro.disconnect();
+          canvas.removeEventListener('pointerdown', onDown);
+          canvas.removeEventListener('pointermove', onMove);
+          canvas.removeEventListener('pointerup', onUp);
+          canvas.removeEventListener('click', onClick);
+          canvas.removeEventListener('pointerleave', onLeave);
+          canvas.removeEventListener('wheel', onWheel);
+          canvas.removeEventListener('dblclick', onDbl);
+          engineRef.current = null;
+        };
+      }, [graph, layout]);
+
+      useEffect(() => {
+        engineRef.current?.setSelected(selected?.id || null);
+      }, [selected]);
+
+      useEffect(() => {
+        setSelected(null);
+        setEvidence(null);
+      }, [graph]);
+
+      useEffect(() => {
+        if (!full) return undefined;
+        const onKey = (e) => { if (e.key === 'Escape') onToggleFull(); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [full, onToggleFull]);
+
+      const sel = selected;
+      const meta = sel ? (STAR_TYPE[sel.type] || { label: '记忆', color: '#94a3b8' }) : null;
+      const quotes = evidence?.evidence || [];
+      return h('div', {
+        'data-dy2-star': '', 'data-full': full ? '1' : '0', ref: wrapRef,
+      },
+      h('canvas', { ref: canvasRef }),
+      h('div', { 'data-dy2-star-hud': '' },
+        Object.entries(STAR_TYPE)
+          .filter(([type]) => graph?.stats?.nodes?.[type])
+          .map(([type, m]) => h('span', { 'data-dy2-star-legend': '', key: `lg:${type}` },
+            h('span', { 'data-dy2-star-dot': '', style: { background: m.color } }), m.label)),
+        h('span', {}, `${graph?.nodes?.length ?? 0} 星 · ${graph?.edges?.length ?? 0} 连线`),
+        layout === 'time' ? h('span', {}, '时间：左早 → 右近') : null),
+      full
+        ? h('button', {
+          'data-dy2-btn': '', 'data-dy2-star-exit': '', onClick: onToggleFull,
+        }, '退出全屏')
+        : null,
+      sel
+        ? h('div', { 'data-dy2-star-detail': '' },
+          h('div', { 'data-dy2-row': '' },
+            h('span', {
+              'data-dy2-badge': '',
+              style: { color: meta.color, borderColor: hexRgba(meta.color, 0.45) },
+            }, meta.label),
+            h('div', { 'data-dy2-grow': '' },
+              h('div', { 'data-dy2-kv': '' }, sel.detail || sel.label),
+              h('div', { 'data-dy2-sub': '' },
+                (sel.sub || '')
+                + (sel.strength != null && sel.state !== 'pinned'
+                  ? ` · 强度 ${Math.round(sel.strength * 100)}%` : '')))),
+          h('div', { 'data-dy2-row': '', style: { marginTop: '6px' } },
+            h('button', {
+              'data-dy2-btn': '', onClick: () => { setSelected(null); setEvidence(null); },
+            }, '关闭')),
+          evBusy ? h('div', { 'data-dy2-sub': '' }, '读原话…') : null,
+          evidence?.error ? h('div', { 'data-dy2-sub': '' }, evidence.error) : null,
+          quotes.length
+            ? h('div', { 'data-dy2-quote-block': '' },
+              quotes.slice(0, 6).map((ev, i) => h('div', { 'data-dy2-quote': '', key: `sq:${i}` },
+                `「${ev.quote}」`,
+                h('span', { 'data-dy2-sub': '' },
+                  ` · ${ev.source === 'diary' ? '日记' : ev.source === 'dm' ? '私信' : (ev.source || '来源')}`
+                  + (ev.at ? ` · ${fmtWhen(ev.at)}` : '')))))
+            : (evidence && !evidence.error
+              ? h('div', { 'data-dy2-sub': '' }, '这条没有引文') : null))
+        : h('div', { 'data-dy2-star-hint': '' }, '拖动旋转 · 滚轮缩放 · 点击星星看详情'),
+      );
+    }
 
     /* ── 主面板 ─────────────────────────────────────────────────────── */
     function Panel() {
@@ -196,21 +666,28 @@ window.__ModuleLoader__.load({
       const [memDetail, setMemDetail] = useState(null);   // { id, episode } 展开的原话
       const [memSel, setMemSel] = useState([]);           // 待确认批量选择
       const [health, setHealth] = useState(null);         // 记忆体检
+      const [starGraph, setStarGraph] = useState(null);   // 记忆星图
+      const [starPrivate, setStarPrivate] = useState(false);
+      const [starLayout, setStarLayout] = useState('force'); // force | time
+      const [starFull, setStarFull] = useState(false);
+      const [starBusy, setStarBusy] = useState('');
       // 内容队列默认只展开最近几条；「展开全部」按钮切完整列表
       const [queueOpen, setQueueOpen] = useState(false);
 
       const load = useCallback(async () => {
         setBusy('load');
         try {
-          const [s, q, c, l, m, hl] = await Promise.all([
+          const [s, q, c, l, m, hl, sg] = await Promise.all([
             jget('/status'), jget('/queue'), jget('/config'), jget('/login/status'),
             jget('/memory/overview').catch(() => null),
             jget('/memory/health').catch(() => null),
+            jget('/memory/graph').catch(() => null),
           ]);
           setData(s);
           setLogin(l);
           setMem(m);
           setHealth(hl);
+          setStarGraph(sg);
           setNick(s.owner || '');
           setIntervalMin(s.watch?.intervalMinutes ?? 10);
           setDailyMax(s.watch?.dailyMax ?? 60);
@@ -382,6 +859,23 @@ window.__ModuleLoader__.load({
         }
       }, [loadHealth]);
 
+      const loadStar = useCallback(async (priv = false) => {
+        setStarBusy('load');
+        try {
+          setStarGraph(await jget(`/memory/graph?private=${priv ? 1 : 0}`));
+        } catch (e) {
+          setMsg(String(e?.message ?? e));
+        } finally {
+          setStarBusy('');
+        }
+      }, []);
+
+      const toggleStarPrivate = useCallback(() => {
+        const next = !starPrivate;
+        setStarPrivate(next);
+        loadStar(next);
+      }, [starPrivate, loadStar]);
+
       const reindexMemory = useCallback(async () => {
         setMemBusy('reindex');
         try {
@@ -411,7 +905,8 @@ window.__ModuleLoader__.load({
       const refreshMemory = useCallback(async () => {
         await loadMemory();
         if (memResults) await searchMem();
-      }, [loadMemory, searchMem, memResults]);
+        await loadStar(starPrivate);
+      }, [loadMemory, searchMem, memResults, loadStar, starPrivate]);
 
       const pinFact = useCallback(async (id, pinned) => {
         setMemBusy('pin');
@@ -651,7 +1146,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.16.2·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.17.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -1031,6 +1526,53 @@ window.__ModuleLoader__.load({
             ? h('div', { 'data-dy2-sub': '' },
               `搜索「${memResults.query || '（空）'}」：事实 ${memResults.facts?.length ?? 0} 条 · `
               + `情节 ${memResults.episodes?.length ?? 0} 条`)
+            : null),
+
+        /* ── 记忆星图 ── */
+        h('div', { 'data-dy2-card': '' },
+          h('div', { 'data-dy2-title': '' }, '记忆星图',
+            starGraph?.nodes?.length
+              ? h('span', { 'data-dy2-badge': 'data-ok' },
+                `${starGraph.nodes.length} 星 · ${starGraph.edges.length} 连线`)
+              : null,
+            h('span', { 'data-dy2-sub': '' }, '性格、事实、情节、叙事线绕成一个星系；只读')),
+          h('div', { 'data-dy2-row': '' },
+            h('div', { 'data-dy2-seg': '' },
+              h('button', {
+                'aria-pressed': starLayout === 'force',
+                onClick: () => setStarLayout('force'),
+              }, '星图'),
+              h('button', {
+                'aria-pressed': starLayout === 'time',
+                onClick: () => setStarLayout('time'),
+              }, '时间')),
+            h('label', { 'data-dy2-switch': '' },
+              h('input', {
+                type: 'checkbox', checked: starPrivate,
+                disabled: starBusy,
+                onChange: toggleStarPrivate,
+              }),
+              h('span', { 'data-dy2-sub': '' }, '含私人')),
+            h('button', {
+              'data-dy2-btn': '', disabled: Boolean(starBusy),
+              onClick: () => loadStar(starPrivate),
+            }, starBusy ? '刷新中…' : '刷新'),
+            h('button', {
+              'data-dy2-btn': '', onClick: () => setStarFull(!starFull),
+            }, starFull ? '退出全屏' : '展开星图')),
+          starGraph?.nodes?.length
+            ? h(StarMap, {
+              graph: starGraph,
+              layout: starLayout,
+              full: starFull,
+              onToggleFull: () => setStarFull(!starFull),
+            })
+            : h('div', { 'data-dy2-empty': '' },
+              starBusy ? '加载星图…' : '还没有记忆 —— 聊几天之后这里会亮起来'),
+          starGraph?.stats?.truncated?.episodes
+            ? h('div', { 'data-dy2-sub': '' },
+              `只显示最近 ${starGraph.nodes.filter((n) => n.type === 'episode').length}`
+              + ` 条情节（共 ${starGraph.stats.available.episodes} 条）；旧星留作背景`)
             : null),
 
         /* ── 记忆体检 ── */

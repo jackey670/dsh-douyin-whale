@@ -44,6 +44,22 @@ if (!fs.existsSync(paths.state)) {
         id: 'f_prev_01', text: '主人喜欢咖啡', category: 'preference', confidence: 0.9,
         first_seen: '2026-11-01', last_seen: '2026-11-20', pinned: true,
         superseded_by: '', visibility: 'public',
+      }, {
+        id: 'f_prev_02', text: '主人最近总在加班', category: 'fact', confidence: 0.8,
+        first_seen: '2026-11-10', last_seen: '2026-11-20', pinned: false,
+        superseded_by: '', visibility: 'public',
+      }, {
+        id: 'f_prev_03', text: '主人换了工作', category: 'fact', confidence: 0.8,
+        first_seen: '2026-08-01', last_seen: '2026-08-01', pinned: false,
+        superseded_by: 'f_prev_04', visibility: 'public',
+      }, {
+        id: 'f_prev_04', text: '主人在学吉他', category: 'fact', confidence: 0.8,
+        first_seen: '2026-11-19', last_seen: '2026-11-19', pinned: false,
+        superseded_by: '', visibility: 'public',
+      }, {
+        id: 'f_prev_05', text: '主人的生日在冬天', category: 'fact', confidence: 0.7,
+        first_seen: '2026-11-12', last_seen: '2026-11-12', pinned: false,
+        superseded_by: '', visibility: 'private',
       }],
       pending: [{
         id: 'p_prev_01', text: '主人最近在学吉他', category: 'preference', confidence: 0.65,
@@ -67,8 +83,47 @@ if (!fs.existsSync(paths.state)) {
       summary: '私人日记：今天很想主人。',
       evidence: [{ source: 'diary', quote: '今天有点想主人' }],
       tags: ['私人日记'], importance: 2, valence: 1, visibility: 'private',
+    }, {
+      id: 'ep_prev_03', ts: '2026-11-20T12:00:00.000Z', kind: 'chat',
+      summary: '主人又加班了，这周第三次，给他打了打气。',
+      evidence: [{ source: 'dm', quote: '这周第三次加班了', at: '2026-11-20T12:00:00.000Z' }],
+      tags: ['加班', '私信'], importance: 2, valence: -1, visibility: 'public',
+    }, {
+      id: 'ep_prev_04', ts: '2026-11-21T12:00:00.000Z', kind: 'chat',
+      summary: '周末去看了海，风很大，拍了不少照片。',
+      evidence: [{ source: 'dm', quote: '周末去看了海，风很大', at: '2026-11-21T12:00:00.000Z' }],
+      tags: ['看海'], importance: 3, valence: 1, visibility: 'public',
+    }, {
+      id: 'ep_prev_05', ts: '2026-11-22T12:00:00.000Z', kind: 'chat',
+      summary: '团子今天特别粘人，趴在键盘上不肯走。',
+      evidence: [{ source: 'dm', quote: '团子今天趴键盘上不下来', at: '2026-11-22T12:00:00.000Z' }],
+      tags: ['猫咪'], importance: 3, valence: 1, visibility: 'public',
+    }, {
+      id: 'ep_prev_06', ts: '2026-11-23T12:00:00.000Z', kind: 'chat',
+      summary: '主人换了新工作，替他高兴，也有点担心他太累。',
+      evidence: [{ source: 'dm', quote: '我换工作了', at: '2026-11-23T12:00:00.000Z' }],
+      tags: ['工作'], importance: 4, valence: 1, visibility: 'public',
+    }, {
+      id: 'ep_prev_07', ts: '2026-11-24T12:00:00.000Z', kind: 'chat',
+      summary: '主人说想学吉他，聊了半天买什么琴。',
+      evidence: [{ source: 'dm', quote: '想学吉他但不知道买哪种', at: '2026-11-24T12:00:00.000Z' }],
+      tags: ['吉他', '工作'], importance: 2, valence: 1, visibility: 'public',
+    }, {
+      id: 'ep_prev_08', ts: '2026-11-25T12:00:00.000Z', kind: 'chat',
+      summary: '主人给我带了咖啡，说加班也要续命。',
+      evidence: [{ source: 'dm', quote: '给你带了杯咖啡', at: '2026-11-25T12:00:00.000Z' }],
+      tags: ['咖啡', '加班'], importance: 3, valence: 1, visibility: 'public',
     }],
-    arcs: { version: 1, arcs: [] },
+    arcs: {
+      version: 1,
+      updatedAt: '2026-11-23T00:00:00.000Z',
+      arcs: [{
+        id: 'arc_prev_01', period: '2026-11-17 ~ 2026-11-23', title: '赶项目的一周',
+        summary: '主人连续加班，周末才缓过来。',
+        episode_ids: ['ep_prev_01', 'ep_prev_03'], visibility: 'public',
+        createdAt: '2026-11-23T00:00:00.000Z',
+      }],
+    },
     meta: {
       version: 1, migratedAt: '2026-11-01T00:00:00.000Z',
       lastConsolidatedAt: '2026-11-20T00:00:00.000Z',
@@ -170,7 +225,7 @@ window.__ModuleLoader__ = {
   },
 };
 </script>
-<script src="/client.js"><\/script>
+<script src="/client.js?v=__DY2V__"><\/script>
 </body></html>`;
 
 const apiHandle = createWhaleApi({ log: (m) => console.log('[api]', m) });
@@ -180,7 +235,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === '/' || p === '/index.html') {
-      return send(res, 200, INDEX_HTML, MIME['.html']);
+      return send(res, 200, INDEX_HTML.replace('__DY2V__', String(Date.now())), MIME['.html']);
     }
     if (p === '/client.js') {
       const body = readStatic(path.join(ROOT, 'client.js'));

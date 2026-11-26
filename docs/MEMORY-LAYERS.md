@@ -295,6 +295,10 @@ Token 预算（不含任务/persona）：
   transport 错误）。
 - `GET /memory/health?staleDays=`：只读六项诊断（见 §10.2），`staleDays` 夹 7–365，
   缺省 90。
+- `GET /memory/graph?private=1&max=&minSim=`：只读星图（v1.17.0）。节点 = 自我/
+  性格/主人/事实/情节/叙事线/主题，边 = core/about/evidence/part_of/related/
+  supersedes；节点只带摘要与详情，evidence 原话只参与相似度计算、不下发。私人
+  条目默认过滤，`private=1` 才出现。
 - `POST /memory/reindex`：按当前情节重建倒排索引（幂等维护动作，不改原文）。
 - `DELETE /memory/item?id=`：删除事实（软删）或情节（移出 jsonl 并重建索引）；
   私信/日记原文保留。
@@ -303,6 +307,9 @@ Token 预算（不含任务/persona）：
   （勾选 + 全选 + 批量采纳/忽略）、情节「看原话」。
 - 面板「记忆体检」卡：六项诊断逐条 ✓/「N 处」+ 样本，底部「重新体检」「重建索引」；
   面板加载时自动体检一次。
+- 面板「记忆星图」卡（v1.17.0）：canvas 3D 星图，轨道旋转/缩放/点选详情/看原话、
+  含私人开关、星图与时间两种布局、全屏；亮度=衰减后的强度，节点大小=重要度/
+  度数，颜色按类型。
 - 日志只记 id/数量/耗时；正文永不进日志。
 
 ## 10. 测试与验收
