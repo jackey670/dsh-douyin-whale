@@ -1,6 +1,7 @@
 # 值班会话轮换真机验证清单（DSH NEXT）
 
 > 状态：v1.14.4 交付轮换，真实宿主验证按本文执行；每次大改 `duty_agent/session_rotate` 后重跑一遍。
+> v1.16.1 起补了 R8 提前收轮 / 忙轮跳过 / 侧栏显隐的观察项（§2 的 10–12），下次切机必须一起验。
 > 前置：本机 DSH NEXT 已装 dsh-douyin-whale（见 `~/.dsh/profiles/desktop/cordis.patch.yml`）。
 > 安全：**两机不能同时跑同一抖音账号**——开本机值班前必须先停笔记本生产。
 
@@ -33,6 +34,10 @@
 | 7 | 轮换后状态 | `session-epochs.json` | `epoch:2, sessionId:…-e2`，history 里有 v2 |
 | 8 | 新会话收到简报 | DSH NEXT 会话页 | e2 会话首条消息是【交接简报】；旧 v2 会话仍在磁盘 |
 | 9 | 轮换后首轮任务 | 插件日志 + 抖音回读 | 新会话投递任务、回复送达、回读确认正常 |
+| 10 | 提前收轮（R8） | 插件日志 + `~/.dsh/memory/reply-marker.json` | dm_send 确认后几秒内出现 `确认发送提前收轮`；回合不再等满 15 分钟；marker 变 `sealed_until` 而不是被删 |
+| 11 | 忙轮跳过（R8） | 插件日志 | 上一轮未结束时新 tick 记 `上一轮还在跑，本轮跳过（不排队）`，队列条数不变 |
+| 12 | 侧栏显隐（v1.14.7+） | DSH NEXT 侧栏 | 默认看不到值班会话；面板勾「值班会话在侧栏可见」保存后，**下一次轮换**的新会话才出现 |
+| 13 | 分享降级（R9，可选） | 插件日志 + 抖音 | 开了 `proactiveShare.linkFallback` 且分享面板没目标时，退化成一条带 `douyin.com/video/<id>` 链接的文字私信；没开则诚实放弃 |
 
 **快速触发轮换**：等自然占用到 70% 太慢，把 `~/.dsh/douyin-whale.config.json` 里
 `duty.rotate.contextRatio` 调小（如 `0.001`）即可——tick 每轮重读配置，**不用重启**；
@@ -48,8 +53,9 @@
 | 轮换失败 create 报已存在 | `e{N}` 被占 | rotate 会向后试两格；仍失败看日志里的 lastError |
 | 简报没进新会话 | `agent.send(msg,'next-turn',false)` 签名不符 | rotate 已回退 followup；确认新会话首条消息 |
 | 值班模型 401 | `WB2_API_KEY` 没进 GUI 进程 | setx 后必须完全重启 DSH NEXT |
-| 回合 900s 超时但已回复 | GLM max-effort 在 dm_send 后还在生成收尾 | 回读兜底不重发；改进候选：发出后提前收轮 |
-| 分享轮从未发出 | 分享面板只列「最近分享过的人」 | agent 会诚实放弃（宁缺毋滥）；先手动分享一次让目标进面板 |
+| 回合 900s 超时但已回复 | GLM max-effort 在 dm_send 后还在生成收尾 | 已改进（v1.14.9：确认发送后提前收轮 + 封存 marker 防重发）；下次切机按 §2-10 复核 |
+| 提前收轮后同一条回复发两遍 | 模型尾部还在生成、又发一次 | 已修：提前收轮把 marker 写成 `sealed_until`（默认 15 分钟），三个发送闸都看 `markerBlocksSend` |
+| 分享轮从未发出 | 分享面板只列「最近分享过的人」 | v1.15.3 起可开 `proactiveShare.linkFallback` 降级发一条带视频链接的文字；没开仍诚实放弃（宁缺毋滥） |
 
 ## 4. 收尾回滚
 
