@@ -261,6 +261,7 @@ async function tick({ manual = false } = {}) {
           log,
           record: true,
           trigger: 'watch',
+          expand: cfg.memory?.expand?.enabled === true ? { max: cfg.memory.expand.max } : null,
         })
         return buildTaskPrompt({
           ...ctx, mem, root: ROOT, home: DSH_HOME,
@@ -374,6 +375,7 @@ async function maybeShareShell({ cfg, merged, manual, ownerNick, log }) {
       log,
       record: true,
       trigger: 'share',
+      expand: cfg.memory?.expand?.enabled === true ? { max: cfg.memory.expand.max } : null,
     })
     const r = await wakeAgent(buildSharePrompt({ ownerNick, mem, cfg, root: ROOT, mood }), 'share')
     // 无论成败都记时间戳：这次机会用掉了，限流闸才算数

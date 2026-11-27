@@ -68,7 +68,13 @@ if (!fs.existsSync(paths.state)) {
         id: 'p_prev_02', text: '主人不喜欢吵闹的地方', category: 'boundary', confidence: 0.6,
         first_seen: '2026-11-20', last_seen: '2026-11-20', evidence: '', visibility: 'public',
       }],
-      relationship: { stage: '', milestones: [] },
+      relationship: {
+        stage: '熟悉',
+        milestones: [
+          { at: '2026-11-18', text: '第一次聊到深夜还不肯睡', episode_id: 'ep_prev_01' },
+          { at: '2026-11-23', text: '主人换了新工作，说要请大肥鱼喝奶茶', episode_id: 'ep_prev_06' },
+        ],
+      },
     },
     episodes: [{
       id: 'ep_prev_01', ts: '2026-11-18T12:00:00.000Z', kind: 'chat',
@@ -129,6 +135,15 @@ if (!fs.existsSync(paths.state)) {
       lastConsolidatedAt: '2026-11-20T00:00:00.000Z',
     },
   });
+  // 共现边 + 回忆轨迹样例：星图有金色连线、「最近想起」有东西可点
+  fs.writeFileSync(path.join(PREVIEW_HOME, 'memory', 'links.jsonl'), [
+    JSON.stringify({ a: 'ep_prev_01', b: 'ep_prev_03', kind: 'co_recall', w: 0.45, updated_at: '2026-11-26T15:02:00.000Z' }),
+    JSON.stringify({ a: 'ep_prev_05', b: 'ep_prev_08', kind: 'co_recall', w: 0.2, updated_at: '2026-11-26T15:02:00.000Z' }),
+  ].join('\n') + '\n', 'utf8');
+  fs.writeFileSync(path.join(PREVIEW_HOME, 'memory', 'traces.jsonl'), [
+    JSON.stringify({ id: 'tr_prev_1', at: '2026-11-26T15:02:00.000Z', trigger: 'watch', ids: ['ep_prev_01', 'ep_prev_03'] }),
+    JSON.stringify({ id: 'tr_prev_2', at: '2026-11-26T15:04:00.000Z', trigger: 'share', ids: ['ep_prev_05', 'ep_prev_08'] }),
+  ].join('\n') + '\n', 'utf8');
   const today = new Date().toLocaleDateString('sv-SE');
   fs.writeFileSync(paths.config, JSON.stringify({
     persona: { name: '大肥鱼', ownerTitle: '主人' },

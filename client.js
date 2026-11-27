@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback, useRef } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 29;
+    const PANEL_BUILD = 30;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -197,7 +197,13 @@ window.__ModuleLoader__.load({
       fact: { label: '事实', color: '#fbbf24' },
       episode: { label: '情节', color: '#5eead4' },
       arc: { label: '叙事线', color: '#c084fc' },
+      milestone: { label: '里程碑', color: '#f0abfc' },
       topic: { label: '主题', color: '#38bdf8' },
+    };
+    // 联想链里的「经由哪种边想起」，面板只显示中文
+    const VIA_KIND = {
+      core: '核心', co_recall: '一起想起', evidence: '同一场', part_of: '同一段叙事',
+      about: '同话题', related: '内容相近', supersedes: '更新版',
     };
     const STAR_EDGE = {
       core: '#f5d0a9', about: '#38bdf8', evidence: '#fbbf24',
@@ -671,7 +677,7 @@ window.__ModuleLoader__.load({
               think.chain.slice(0, 9).map((c) => h('button', {
                 'data-dy2-chain-item': '',
                 key: `th:${c.id}`,
-                title: c.viaKind ? `经由 ${c.viaKind} 想起` : '起点',
+                title: c.viaKind ? `经由「${VIA_KIND[c.viaKind] || c.viaKind}」想起` : '起点',
                 onClick: () => pick(graph.nodes.find((n) => n.id === c.id) || null, true),
               },
               h('span', { 'data-dy2-chain-hop': '' }, c.hop === 0 ? '起点' : `${c.hop} 跳`),
@@ -1209,7 +1215,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.19.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.20.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },

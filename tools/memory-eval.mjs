@@ -147,6 +147,23 @@ const QUESTIONS = [
   { kind: 'negative', q: '怎么申请火星签证', expect: null },
 ];
 
+/* ── --expand-compare：合成共现边 + 只能靠扩散捞回的题 ─────────────────
+ * 这两条边是「一起被想起」学出来的关联，文本上不相似（BM25 摸不到）：
+ *   演唱会嗓子喊哑 ↔ 感冒嗓子疼   （ep_20261110_01 ↔ ep_20261030_01）
+ *   演唱会的票     ↔ 想学游泳怕水 （ep_20261103_01 ↔ ep_20261109_01）
+ * 关联题刻意避开「主人」等全场词，基线 rank=0，开扩散后才进 used。 */
+const LINK_QUESTIONS = [
+  { kind: 'event', q: '演唱会现场气氛怎么样', expect: 'ep_20261030_01' },
+  { kind: 'event', q: '下周三有什么打算', expect: 'ep_20261109_01' },
+];
+
+function writeSyntheticLinks(home) {
+  fs.writeFileSync(path.join(home, 'memory', 'links.jsonl'), [
+    JSON.stringify({ a: 'ep_20261110_01', b: 'ep_20261030_01', kind: 'co_recall', w: 0.6 }),
+    JSON.stringify({ a: 'ep_20261103_01', b: 'ep_20261109_01', kind: 'co_recall', w: 0.5 }),
+  ].join('\n') + '\n', 'utf8');
+}
+
 function fixtureHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-eval-'));
   const profile = {
@@ -179,7 +196,7 @@ function fixtureHome() {
   return home;
 }
 
-function evalQuestions({ home, questions, now = FIXED_NOW, includePrivateDefault = false }) {
+function evalQuestions({ home, questions, now = FIXED_NOW, includePrivateDefault = false, expand = null }) {
   const rows = [];
   for (const item of questions) {
     const includePrivate = item.includePrivate ?? includePrivateDefault;
@@ -189,6 +206,7 @@ function evalQuestions({ home, questions, now = FIXED_NOW, includePrivateDefault
       query: item.q,
       now,
       includePrivate,
+      expand: expand && { max: expand.max },
     });
     let pass = false;
     let rank = 0;
@@ -358,6 +376,43 @@ function main() {
     if (asJson) console.log(JSON.stringify({ ok: true, mode: 'questions', metrics: s }, null, 2));
     else printSummary('本机手写问题集', s);
     return s.hit4Rate >= minHit4 ? 0 : 1;
+  }
+
+  if (flag('--expand-compare')) {
+    const home = fixtureHome();
+    try {
+      writeSyntheticLinks(home);
+      const questions = [...QUESTIONS, ...LINK_QUESTIONS];
+      const baseRows = evalQuestions({ home, questions, now: FIXED_NOW });
+      const expRows = evalQuestions({ home, questions, now: FIXED_NOW, expand: { max: 2 } });
+      const base = summarize(baseRows, 0);
+      const exp = summarize(expRows, 0);
+      printSummary('不开扩散（基线）', base);
+      printSummary('开扩散（memory.expand，max=2）', exp);
+      console.log(`\n--- 扩散带来的 rank 变化（只列有变化的题） ---`);
+      let linkOk = true;
+      for (let i = 0; i < questions.length; i += 1) {
+        const before = baseRows[i].rank;
+        const after = expRows[i].rank;
+        if (before === after) continue;
+        console.log(`  ${before} → ${after}  ${questions[i].q}`);
+        if (after === 0 && before > 0) linkOk = false;
+      }
+      for (const lq of LINK_QUESTIONS) {
+        const row = expRows[questions.indexOf(lq)];
+        if (!(row.rank > 0)) {
+          linkOk = false;
+          console.log(`  ✗ 关联题没捞回：${lq.q}（rank=${row.rank}）`);
+        }
+      }
+      console.log(`\n机制门禁：${linkOk ? 'PASS（关联题靠共现边捞回，基线题无一掉出）' : 'FAIL'}`);
+      const gate = base.factHits >= base.facts && base.negativeClean >= base.negatives
+        && base.privateClean >= base.privateChecks && base.hit4Rate >= minHit4;
+      if (!gate) console.error('基线指标低于门禁');
+      return gate && linkOk ? 0 : 1;
+    } finally {
+      try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   }
 
   const home = fixtureHome();

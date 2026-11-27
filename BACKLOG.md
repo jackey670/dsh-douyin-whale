@@ -85,7 +85,7 @@
 | R8 | 值班收轮优化 | dm_send 已发出后模型仍在生成 → 900s 超时收轮（回读兜住）；改成发出后提前收轮 | 0.5 天 | ✅ v1.14.9（含 lastSendInfo 死代码修复；真机复核待下次切机） |
 | R9 | 分享目标保活 | 分享面板只列「最近分享过的人」，目标不在面板时轮次必空转 | 0.5 天 | ✅ v1.15.3（`proactiveShare.linkFallback` 默认关：开启后退化成一条带链接文字；面板开关） |
 | R10 | 记忆体检 | `/memory/health` 六项诊断（过期/重复/无引文/断引用/索引失配/积压）+ 面板体检卡 + 一键重建索引 | 0.5 天 | ✅ v1.16.0（诊断只提示不自动改；重建索引幂等；memory_layers 16 / panel_api 29 通过） |
-| R11 | 记忆星图 | 把自我/性格/主人/事实/情节/叙事线/主题做成可交互 3D 星系；后续接衰减、共现边、图扩散回忆与思维链回放 | 2–3 天 | P1 ✅ v1.17.0（`memory_graph.js` + `/memory/graph` + canvas 3D 星图/时间布局/全屏/点选看原话；只读、原话不下发）。P2 ✅ v1.18.0（回忆强化 uses/last_used_at + `links.jsonl` 共现边 + `traces.jsonl`/`/memory/traces` + 星图轨迹回放；锁抽成 `memory_lock.js`；迁移包含 links/traces）。P3-lite ✅ v1.19.0（`memory_think.js` 激活扩散 + `/memory/think` + 面板联想链 + 心情星）。P3 剩余：把图扩散接进提示词召回并做 30 题对比（等真实 co_recall 数据）、实体抽取（可选 LLM）、WebGL/Three 升级 |
+| R11 | 记忆星图 | 把自我/性格/主人/事实/情节/叙事线/主题做成可交互 3D 星系；后续接衰减、共现边、图扩散回忆与思维链回放 | 2–3 天 | P1 ✅ v1.17.0（`memory_graph.js` + `/memory/graph` + canvas 3D 星图/时间布局/全屏/点选看原话；只读、原话不下发）。P2 ✅ v1.18.0（回忆强化 uses/last_used_at + `links.jsonl` 共现边 + `traces.jsonl`/`/memory/traces` + 星图轨迹回放；锁抽成 `memory_lock.js`；迁移包含 links/traces）。P3-lite ✅ v1.19.0（`memory_think.js` 激活扩散 + `/memory/think` + 面板联想链 + 心情星）。P3 续 ✅ v1.20.0（`expandByLinks` 扩散召回接进提示词，`memory.expand` 默认关 + `--expand-compare` 机制门禁；里程碑星 + owner 关系阶段 + 联想链中文标注）。剩余：笔记本升级攒真实共现数据 → 真实题集对比过关后把 `memory.expand.enabled` 默认开；实体抽取（可选 LLM）、WebGL/Three 升级 |
 
 
 | # | 问题 | 状态 |

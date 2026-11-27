@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.20.0 — 2026-11-27
+
+记忆星图 P3 续：扩散召回做成默认关的开关先上，星图把「关系」也画进去。
+
+### 新增
+
+- **图扩散召回**（`expandByLinks`，`lib/memory_layers.js`）：选完【相关回忆】后，
+  沿 `links.jsonl` 的 `co_recall` 边把「一起被想起过」的邻居补进同一块（默认
+  ≤2 条、行尾标「联想到」），扩散条目同样写轨迹、被强化。只扩 `co_recall`——
+  结构相似 BM25 本来就能覆盖，扩散只补文本检索看不见的那一半。
+  - 配置 `memory.expand = { enabled, max }`，**默认关**；四条注入路径
+    （值班/调度器 ×2 + 主动分享 ×2）读配置接线，关闭时行为零变化。
+  - 扩散条目进 `ctx.used` → `recordRecall` 一起强化并继续长共现边
+    （4 基线 + 2 扩散 = 6，正好在单次上限内）。
+- **评测对比 `node tools/memory-eval.mjs --expand-compare`**：同一题集跑关/开
+  两遍；合成 fixture 加 2 条共现边 + 2 道只能靠扩散捞回的题（基线 rank=0 →
+  开扩散 rank 3/2），并带机制门禁——关联题没捞回或基线题掉出即 FAIL。
+  合成集对比：hit@4 91.3% → 100%，MRR 0.848 → 0.884，负例/私人过滤不变，
+  最大注入 239 → 314 字（预算 1000 内）。
+- **里程碑星**（`lib/memory_graph.js`）：`profile.relationship.milestones` 生成
+  `milestone` 节点，`owner → milestone`（about）+ `milestone → 情节`（evidence）。
+  引用私人情节的里程碑默认整条跳过（防私人日记内容经里程碑泄漏）；引用已删
+  情节的保留节点、不连边。owner 节点 detail 带关系阶段（如「关系阶段：熟悉」）。
+- **面板**（PANEL_BUILD=30）：图例新增「里程碑」；联想链 title 改中文标注
+  （co_recall→一起想起、evidence→同一场、part_of→同一段叙事、about→同话题、
+  related→内容相近）。
+
+### 文档
+
+- `docs/MEMORY-LAYERS.md`：§4.6 补「接入提示词（默认关）」，§6/§9 补扩散与
+  里程碑；README 星图段补 v1.20.0。
+
+### 验证
+
+- `lib/memory_layers.test.mjs` 19 项（+扩散开/关、上限、私人过滤、文本标记）；
+  `lib/memory_graph.test.mjs` 7 项（+里程碑三态与 owner 关系阶段）。
+- `npm test` 24 组全绿；审计 46 项通过。
+- 面板预览实测：里程碑星 + 中文联想链标注。
+
+### 待真实数据
+
+- 生产笔记本升级到 v1.20.0 并跑一段时间后，用真实题集跑 `--expand-compare`
+  对比，过关再把 `memory.expand.enabled` 默认开。
+
 ## 1.19.0 — 2026-11-27
 
 记忆星图 P3：星图不再只是看的——点一颗星能顺着连线「想下去」，心情也有了自己的星。

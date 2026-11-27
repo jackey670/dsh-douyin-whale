@@ -2,8 +2,9 @@
 
 > 状态：Phase 2A 已实现（v1.14.1）；Phase 3a 评测/面板（v1.14.2）、
 > Phase 3b 周反思（v1.14.3）、Phase 2B 值班会话轮换（v1.14.4）已做；
-> 记忆星图 P1/P2/P3（v1.17.0 / v1.18.0 / v1.19.0）已完成；真实 DSH 值班宿主还需真机验证。
-> 日期：2026-11-11（v1.19.0 更新于 2026-11-27）
+> 记忆星图 P1–P3（v1.17.0 / v1.18.0 / v1.19.0）已完成，v1.20.0 起扩散召回进提示词（默认关）；
+> 真实 DSH 值班宿主还需真机验证。
+> 日期：2026-11-11（v1.20.0 更新于 2026-11-27）
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
 ## 0. 实现进度
@@ -17,7 +18,7 @@
 | Phase 3a 评测 + 面板 | ✅ v1.14.2：`tools/memory-eval.mjs` 30 题；`/memory/overview|search|pin|pending|item`；面板记忆卡；低置信待确认 |
 | Phase 3b 周反思 | ✅ v1.14.3：`lib/memory_reflect.js`；最近 7 天情节 → arcs；私人叙事线默认不注入；面板显示叙事线 |
 | Phase 3c 向量召回 | ⬜ 暂不上：合成集 hit@4 100%，等真实问题集出现缺口再评估 |
-| Phase 4 记忆星图 | ✅ v1.17.0 P1（图构建 + 3D 面板）、v1.18.0 P2（回忆强化/共现边/轨迹回放）、v1.19.0 P3（思维链查询/联想链/心情星）；图扩散回忆进提示词等真实共现数据攒够再上 |
+| Phase 4 记忆星图 | ✅ v1.17.0 P1（图构建 + 3D 面板）、v1.18.0 P2（回忆强化/共现边/轨迹回放）、v1.19.0 P3（思维链查询/联想链/心情星）、v1.20.0（扩散召回开关默认关 + 里程碑星）；开关等真实共现数据评测过关再默认开 |
 
 
 ## 1. 要解决的问题
@@ -194,8 +195,14 @@ Phase 1 用 `index.json`：
 - 输出 `{id,type,label,sub,hop,score,via,viaKind}`，**只带摘要与路径**，
   evidence 原话不下发；私人节点是否出现完全继承星图。
 
-目前只服务查询/可视化（`/memory/think` + 面板「联想」），**没接进提示词召回**；
-等真实值班攒出 `co_recall` 数据，再用 30 题评测决定图扩散要不要默认开。
+v1.20.0 起 `thinkChain` 的孪生兄弟 `expandByLinks` 接进了提示词召回：配置
+`memory.expand = { enabled, max }`（**默认关**）。打开后 `buildMemoryContext` 在
+选完【相关回忆】后，沿 `links.jsonl` 的 `co_recall` 边把「一起被想起过」的邻居
+补进同一块（默认 ≤2 条、行尾标「联想到」），扩散条目同样写进轨迹、被强化。
+只扩 `co_recall`——结构相似 BM25 本来就能覆盖，扩散只补文本检索看不见的那一半。
+机制验证：`node tools/memory-eval.mjs --expand-compare`（合成共现边 + 两道只能靠
+扩散捞回的题，基线题不允许掉出）。等笔记本升级攒出真实共现数据后，用真实题集
+对比过关再把 `enabled` 默认开。
 
 ## 5. 写入路径
 
@@ -258,6 +265,9 @@ score = 0.45 * bm25   + 0.25 * recency + 0.20 * importance + 0.10 * affect
 - 召回结果由 `recordRecall` 写回 `uses/last_used_at`（v1.18.0）：星图亮度据此增强。
   检索排序暂不读 `uses`——排序再吃强化信号会形成「越常被搜到就越常被搜到」的正反馈，
   等图扩散回忆上线时再统一考虑。
+- `memory.expand.enabled`（v1.20.0，**默认关**）打开后沿 `co_recall` 共现边把
+  「一起被想起过」的邻居补进【相关回忆】（默认 ≤2 条，行尾标「联想到」）；扩散
+  条目同样进轨迹、被强化。详见 §4.6。
 
 Token 预算（不含任务/persona）：
 
@@ -339,9 +349,10 @@ Token 预算（不含任务/persona）：
 - `GET /memory/health?staleDays=`：只读六项诊断（见 §10.2），`staleDays` 夹 7–365，
   缺省 90。
 - `GET /memory/graph?private=1&max=&minSim=`：只读星图（v1.17.0）。节点 = 自我/
-  性格/主人/心情（v1.19.0）/事实/情节/叙事线/主题，边 = core/about/evidence/
-  part_of/related/supersedes/co_recall（v1.18.0）；节点只带摘要与详情，evidence
-  原话只参与相似度计算、不下发。私人条目默认过滤，`private=1` 才出现。
+  性格/主人/心情（v1.19.0）/事实/情节/叙事线/里程碑（v1.20.0）/主题，边 =
+  core/about/evidence/part_of/related/supersedes/co_recall（v1.18.0）；节点只带
+  摘要与详情，evidence 原话只参与相似度计算、不下发。私人条目默认过滤，
+  `private=1` 才出现；引用私人情节的里程碑同样默认跳过。
 - `GET /memory/traces?limit=`：最近想起记录（v1.18.0），`limit` 夹 1–100、缺省 20；
   只回 `{id, at, trigger, ids}`，不含摘要/原话。
 - `GET /memory/think?q=&seed=&hops=&limit=&private=1`：思维链（v1.19.0）。
@@ -447,7 +458,7 @@ npm run memory:eval:local   # 用生成的问题集跑评测
 | Phase 3a | 30 题评测 + 面板记忆浏览器 + 待确认 | ✅ v1.14.2 |
 | Phase 3b | 周反思 arcs | ✅ v1.14.3 |
 | Phase 3c | 可选本地向量召回 | ⬜ 暂不上（等真实问题集缺口） |
-| Phase 4 | 记忆星图（图构建/3D 面板/回忆强化/轨迹回放/思维链/心情星） | ✅ v1.17.0–v1.19.0 |
+| Phase 4 | 记忆星图（图构建/3D 面板/回忆强化/轨迹回放/思维链/心情星/扩散召回开关/里程碑星） | ✅ v1.17.0–v1.20.0 |
 
 建议版本：v1.14.0 = Phase 1，v1.14.1 = Phase 2A，v1.14.2 = Phase 3a，
 v1.14.3 = Phase 3b，v1.14.4 = Phase 2B。下一版先做值班轮换真机验证。
