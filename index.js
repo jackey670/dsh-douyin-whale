@@ -161,9 +161,15 @@ export function apply(ctx, config = {}) {
               'memory', 'session-epochs.json'),
             cwd: resolved.dataDir || join(ROOT, 'data'),
             // 值班会话模型路由：配置了 duty.provider/duty.model 就用它们
-            // （pi-ai 自定义网关），否则跟随宿主默认。
+            // （pi-ai 自定义网关），否则跟随宿主默认；duty.reasoningEffort 可显式
+            // 指定思考档，缺省时显式路由吃上游默认、跟随宿主则连宿主的思考档一起带。
             modelSelection: (resolved.dutyProvider && resolved.dutyModel)
-              ? { provider: resolved.dutyProvider, model: resolved.dutyModel }
+              ? {
+                provider: resolved.dutyProvider,
+                model: resolved.dutyModel,
+                ...(readConfig().duty?.reasoningEffort
+                  ? { reasoningEffort: readConfig().duty.reasoningEffort } : {}),
+              }
               : null,
             // 侧栏显隐：每次真正创建会话（首次/轮换）时读一遍面板配置，
             // 开关改完不用重启，下次轮换的新会话就按新值来。

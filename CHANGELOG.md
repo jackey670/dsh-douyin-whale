@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.21.1 — 2026-11-28
+
+值班会话把宿主默认的「思考档」也带上（真机排查发现它一直在吃上游默认档）。
+
+### 修复
+
+- **`lib/duty_agent.js`**：`buildBaseOptions` 之前只把宿主默认选择的
+  `provider/model` 传进 `agentOptions`，`reasoningEffort` 被丢掉——值班虽然也在
+  思考（v4.1-flash 是混合思考模型，上游默认就带），但不是宿主 UI 配的那一档
+  （desktop patch `agent-default-model.reasoningEffort: max`）。
+  现在跟随宿主默认时连思考档一起传；显式配 `duty.provider/duty.model` 时可用
+  `duty.reasoningEffort` 指定，缺省吃上游默认。
+- wb2api 探针实测（同一句话）：思考量 93 → 246 reasoning tokens（约 2.6×），
+  延迟 2.3s → 3.0s；对值班短回复影响很小，多轮对话贴人设更稳。
+
+### 验证
+
+- `lib/duty_agent.test.mjs` 17 项（+③d 宿主默认 reasoningEffort 进 agentOptions）。
+- 真机重启 DSH NEXT 后值班轮正常（注入/发送/回读/收轮不变）。
+
 ## 1.21.0 — 2026-11-28
 
 实体抽取搭固化便车 + 面板 UI 冒烟自动化 + 扩散召回面板开关。
