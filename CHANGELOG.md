@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.21.0 — 2026-11-28
+
+实体抽取搭固化便车 + 面板 UI 冒烟自动化 + 扩散召回面板开关。
+
+### 新增
+
+- **实体抽取（v1.21.0，`lib/memory_consolidate.js`）**：固化提示词的输出 schema
+  加 `entities:[{name,kind,evidence}]`（person/pet/item/topic/place，≤8 条/次），
+  **同一次模型调用**顺带完成，零额外成本。
+  - 校验：name ≤12 字、泛词黑名单（主人/大肥鱼/视频/抖音/今天…）直接拒、
+    evidence 子串匹配、run 内去重；私人素材来源 → private。
+  - 存储：`profile.entities`（≤80 条按 last_seen 滚动）；归一化相同**或互相包含**
+    视为同一实体（团子 / 团子猫），命中只更新时间戳。
+  - 星图：`entity` 节点（≤30，新的优先），`owner → entity`（about）+
+    `entity → 情节`（evidence，名字 bigram 撞情节 top 2）；私人实体默认过滤。
+- **面板 UI 冒烟（`tests/test_panel_ui.py`，`npm run test:ui`）**：preview server +
+  headless Edge（360 拦 %TEMP% 的坑按启动器同款方案把 TEMP 指到 `data/tmp`），
+  7 项 DOM 断言：卡片渲染/版本串、星图徽章与图例（含心情/里程碑/实体）、轨迹
+  chips 高亮切换、展开星图/Esc 全屏、记忆搜索（命中 + 无命中提示）、待确认批量
+  按钮随勾选启停、无 JS console 错误。canvas 点星仍走人工预览。浏览器缺失整模块
+  skip；**不在默认 `npm test` 门禁里**（避免浏览器波动拖慢套件）。
+- **面板「联想扩散召回」开关**：`sanitizeConfigPatch` 支持 `memory.expand`
+  （enabled + max 夹 1–3）；运行参数区新增复选框（默认关，提示等真实数据评测）。
+- 预览 seed 补实体样例（团子/旧吉他），星图图例更全。
+
+### 验证
+
+- `lib/memory_consolidate.test.mjs` 10 项（+实体校验/合并/去重）、
+  `lib/memory_graph.test.mjs` 7 项（+实体星/边/私人过滤）、
+  `lib/panel_api.test.mjs` 33 项（+PATCH memory.expand 与 deep merge 保护）；
+  `npm run test:ui` 7 项全过；`npm test` 全绿；审计 47 项。
+- `--expand-compare` 机制门禁仍 PASS（实体不影响检索）。
+
+### 真机（待切机）
+
+- 笔记本按 `docs/UPGRADE.md` 方式 A 升到 v1.21.0 后：确认面板版本串、星图
+  （心情/里程碑/实体星）、「联想扩散召回」开关、`memory/traces.jsonl` 增长、
+  R8 提前收轮观察项 10–13。真实共现数据攒起来后跑 `--expand-compare` 决定默认开。
+
 ## 1.20.0 — 2026-11-27
 
 记忆星图 P3 续：扩散召回做成默认关的开关先上，星图把「关系」也画进去。

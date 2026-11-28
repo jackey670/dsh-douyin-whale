@@ -1,6 +1,6 @@
 {
   "name": "dsh-douyin-whale",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "description": "大肥鱼刷抖音 — Douyin toolkit for Dafeiyu: hot list, search, video frames, native share cards, guarded DM (text + sticker images + native emoji), whale diaries, local HTTP API, and a scheduler that watches owner-sent content and replies.",
   "type": "module",
   "main": "index.js",
@@ -99,6 +99,7 @@
     "preview": "node tools/panel-preview/server.mjs",
     "test:py": "node tools/run-py.mjs -m pytest -q tests/test_safety.py tests/test_readback.py tests/test_send_gate.py tests/test_meme_gate.py",
     "test:send-gate": "node tools/run-py.mjs -m pytest -q tests/test_send_gate.py",
+    "test:ui": "node tools/run-py.mjs -m pytest -q tests/test_panel_ui.py",
     "test:tick": "node lib/whale_tick.test.mjs",
     "test:duty": "node lib/duty_agent.test.mjs"
   }

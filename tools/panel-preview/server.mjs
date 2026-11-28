@@ -68,6 +68,13 @@ if (!fs.existsSync(paths.state)) {
         id: 'p_prev_02', text: '主人不喜欢吵闹的地方', category: 'boundary', confidence: 0.6,
         first_seen: '2026-11-20', last_seen: '2026-11-20', evidence: '', visibility: 'public',
       }],
+      entities: [{
+        id: 'e_prev_tuanzi', name: '团子', kind: 'pet', evidence: '',
+        first_seen: '2026-11-01', last_seen: '2026-11-25', visibility: 'public',
+      }, {
+        id: 'e_prev_gita', name: '旧吉他', kind: 'item', evidence: '',
+        first_seen: '2026-11-10', last_seen: '2026-11-24', visibility: 'public',
+      }],
       relationship: {
         stage: '熟悉',
         milestones: [

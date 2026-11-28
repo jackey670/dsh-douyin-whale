@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useCallback, useRef } = React;
 
     const API = '/api/douyin-whale';
-    const PANEL_BUILD = 30;
+    const PANEL_BUILD = 31;
 
     const asJson = async (res) => {
       if (res.ok) return res.json();
@@ -198,6 +198,7 @@ window.__ModuleLoader__.load({
       episode: { label: '情节', color: '#5eead4' },
       arc: { label: '叙事线', color: '#c084fc' },
       milestone: { label: '里程碑', color: '#f0abfc' },
+      entity: { label: '实体', color: '#4ade80' },
       topic: { label: '主题', color: '#38bdf8' },
     };
     // 联想链里的「经由哪种边想起」，面板只显示中文
@@ -717,6 +718,7 @@ window.__ModuleLoader__.load({
       const [petSleep, setPetSleep] = useState(true);
       const [petMin, setPetMin] = useState(15);
       const [dutyVisible, setDutyVisible] = useState(false);
+      const [expandEnabled, setExpandEnabled] = useState(false);
       const [mem, setMem] = useState(null);
       const [memQ, setMemQ] = useState('');
       const [memPrivate, setMemPrivate] = useState(false);
@@ -775,6 +777,7 @@ window.__ModuleLoader__.load({
           setPetSleep(cc.pet?.sleepEnabled !== false);
           setPetMin(cc.pet?.minIntervalMinutes ?? 15);
           setDutyVisible(cc.duty?.sessionVisible === true);
+          setExpandEnabled(cc.memory?.expand?.enabled === true);
           setMsg('');
         } catch (e) {
           setMsg(String(e?.message ?? e));
@@ -849,6 +852,7 @@ window.__ModuleLoader__.load({
               minIntervalMinutes: petMin,
             },
             duty: { sessionVisible: dutyVisible },
+            memory: { expand: { enabled: expandEnabled } },
           });
           if (j.ok) setMsg('配置已保存（下个 tick 生效）');
           else setMsg(j.error || '保存失败');
@@ -859,7 +863,8 @@ window.__ModuleLoader__.load({
         }
       }, [nick, enabled, interval, dailyMax, winStart, winEnd, memePct, memeMax,
         shareEnabled, sharePct, shareMax, shareMin, shareLinkFallback, personaText,
-        moodEnabled, sleepStart, sleepEnd, petEnabled, petSleep, petMin, dutyVisible]);
+        moodEnabled, sleepStart, sleepEnd, petEnabled, petSleep, petMin, dutyVisible,
+        expandEnabled]);
 
       const schedulerAct = useCallback(async (action) => {
         setBusy(action);
@@ -1215,7 +1220,7 @@ window.__ModuleLoader__.load({
             '运行状态',
             h('span', { 'data-dy2-badge': running ? 'data-ok' : 'data-warn' },
               running ? `运行中 · PID ${data?.daemon?.pid}` : '未运行'),
-            h('span', { 'data-dy2-sub': '' }, `v1.20.0·b${PANEL_BUILD}`)),
+            h('span', { 'data-dy2-sub': '' }, `v1.21.0·b${PANEL_BUILD}`)),
           data
             ? h('div', { 'data-dy2-stats': '' },
                 h('div', { 'data-dy2-stat': '' },
@@ -1446,6 +1451,19 @@ window.__ModuleLoader__.load({
                   h('div', { 'data-dy2-hint': '' },
                     '默认关闭：值班会话不占侧栏对话框，每次轮换也不会多出新框。'
                     + '改完保存，下次轮换/重启拉起的新会话按新设置走，当前会话不变。')))),
+            h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
+              h('div', { 'data-dy2-grouplabel': '' }, '记忆 —— 联想扩散召回')),
+            h('div', { 'data-dy2-field': '', 'data-wide': '' },
+              h('label', { 'data-dy2-switch': '' },
+                h('input', {
+                  type: 'checkbox', checked: expandEnabled,
+                  onChange: (e) => setExpandEnabled(e.target.checked),
+                }),
+                h('div', null,
+                  h('div', { 'data-dy2-label': '' }, '沿共现边扩散回忆'),
+                  h('div', { 'data-dy2-hint': '' },
+                    '把「和本轮回忆一起被想起过」的旧事也补进【相关回忆】（行尾标「联想到」）。'
+                    + '默认关：等真实共现数据攒起来、评测过关后再开。')))),
             h('div', { 'data-dy2-field': '', 'data-wide': '', 'data-grouphead': '' },
               h('div', { 'data-dy2-grouplabel': '' }, '状态与桌宠 —— 心情、作息、桌面反馈')),
             h('div', { 'data-dy2-field': '', 'data-wide': '' },

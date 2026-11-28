@@ -2,9 +2,9 @@
 
 > 状态：Phase 2A 已实现（v1.14.1）；Phase 3a 评测/面板（v1.14.2）、
 > Phase 3b 周反思（v1.14.3）、Phase 2B 值班会话轮换（v1.14.4）已做；
-> 记忆星图 P1–P3（v1.17.0 / v1.18.0 / v1.19.0）已完成，v1.20.0 起扩散召回进提示词（默认关）；
+> 记忆星图 P1–P3（v1.17.0–v1.20.0）已完成，v1.21.0 加实体抽取（搭固化便车）；
 > 真实 DSH 值班宿主还需真机验证。
-> 日期：2026-11-11（v1.20.0 更新于 2026-11-27）
+> 日期：2026-11-11（v1.21.0 更新于 2026-11-28）
 > 相关：`scheduler/memory.mjs`、`lib/memory_layers.js`、`lib/persona.js`、`lib/diary.js`、`lib/mood.js`、`lib/whale_prompt.js`
 
 ## 0. 实现进度
@@ -204,6 +204,19 @@ v1.20.0 起 `thinkChain` 的孪生兄弟 `expandByLinks` 接进了提示词召�
 扩散捞回的题，基线题不允许掉出）。等笔记本升级攒出真实共现数据后，用真实题集
 对比过关再把 `enabled` 默认开。
 
+### 4.7 实体（v1.21.0）
+
+- **抽取搭固化的便车**：`buildConsolidationPrompt` 的输出 schema 加
+  `entities:[{name,kind,evidence}]`（kind = person/pet/item/topic/place，每次 ≤8 条），
+  **同一次模型调用**顺带完成，不增加调用次数和成本。
+- **校验**：name ≤12 字；泛词黑名单（主人/大肥鱼/视频/抖音/私信/日记/今天…）直接拒；
+  evidence 必须逐字来自素材；run 内去重；私人素材来源 → `visibility=private`。
+- **存储**：`profile.entities`（≤80 条按 last_seen 滚动）。合并规则：归一化相同
+  **或互相包含**视为同一实体（团子 / 团子猫），命中只更新 `last_seen`、补 evidence。
+- **星图**：`entity` 节点（≤30，last_seen 新的优先），`owner → entity`（about）+
+  `entity → 情节`（evidence，拿名字 bigram 撞情节 top 2）；私人实体默认过滤，
+  与事实同规则。
+
 ## 5. 写入路径
 
 ### 5.1 每轮（轻量）
@@ -349,9 +362,9 @@ Token 预算（不含任务/persona）：
 - `GET /memory/health?staleDays=`：只读六项诊断（见 §10.2），`staleDays` 夹 7–365，
   缺省 90。
 - `GET /memory/graph?private=1&max=&minSim=`：只读星图（v1.17.0）。节点 = 自我/
-  性格/主人/心情（v1.19.0）/事实/情节/叙事线/里程碑（v1.20.0）/主题，边 =
-  core/about/evidence/part_of/related/supersedes/co_recall（v1.18.0）；节点只带
-  摘要与详情，evidence 原话只参与相似度计算、不下发。私人条目默认过滤，
+  性格/主人/心情（v1.19.0）/事实/情节/叙事线/里程碑（v1.20.0）/实体（v1.21.0）/
+  主题，边 = core/about/evidence/part_of/related/supersedes/co_recall（v1.18.0）；
+  节点只带摘要与详情，evidence 原话只参与相似度计算、不下发。私人条目默认过滤，
   `private=1` 才出现；引用私人情节的里程碑同样默认跳过。
 - `GET /memory/traces?limit=`：最近想起记录（v1.18.0），`limit` 夹 1–100、缺省 20；
   只回 `{id, at, trigger, ids}`，不含摘要/原话。

@@ -10,7 +10,7 @@
 node scheduler/scheduler.mjs --stop          # 独立调度器
 pwsh -File scripts/dev-duty.ps1 -Off        # 本机值班（笔记本没有这个脚本就手动改 patch）
 npm run memory:export -- --push             # 记忆推到私有仓（第一次要先配好仓库）
-git fetch --tags && git checkout v1.16.1    # 换到目标版本
+git fetch --tags && git checkout v1.21.0    # 换到目标版本
 # 完全退出并重启 DSH NEXT，然后按 §4 自检
 ```
 
@@ -35,22 +35,22 @@ git fetch --tags && git checkout v1.16.1    # 换到目标版本
 ```bash
 cd <repo>
 git fetch --tags
-git checkout v1.16.1          # 目标版本 tag
+git checkout v1.21.0          # 目标版本 tag
 git status                    # 确认没有本地改动被带过去
 ```
 
 - 依赖没变就不用动 `.venv`；`package.json` 没有运行时 npm 依赖，不用 `npm install`。
 - 完全退出并重启 DSH NEXT（不是只关窗口——托盘/后台进程也要退）。
-- 面板打开，右上角显示 `v1.16.1·b26` 即换版成功。
+- 面板打开，右上角显示 `v1.21.0·b31` 即换版成功。
 
 ## 3. 升级方式 B：打包 tarball（不想 clone / 市场装法）
 
 Release 页有 `dsh-douyin-whale-<版本>.tgz` 和 `.sha256`：
 
 ```bash
-curl -LO https://github.com/jackey670/dsh-douyin-whale/releases/download/v1.16.1/dsh-douyin-whale-1.16.1.tgz
-sha256sum -c dsh-douyin-whale-1.16.1.tgz.sha256     # Windows: certutil -hashfile <文件> SHA256
-dsh plugin --profile desktop add file:$PWD/dsh-douyin-whale-1.16.1.tgz
+curl -LO https://github.com/jackey670/dsh-douyin-whale/releases/download/v1.21.0/dsh-douyin-whale-1.21.0.tgz
+sha256sum -c dsh-douyin-whale-1.21.0.tgz.sha256     # Windows: certutil -hashfile <文件> SHA256
+dsh plugin --profile desktop add file:$PWD/dsh-douyin-whale-1.21.0.tgz
 ```
 
 打包安装的三处不同：

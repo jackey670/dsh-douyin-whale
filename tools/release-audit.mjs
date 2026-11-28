@@ -85,7 +85,7 @@ else ok(`面板版本 = ${version}`);
 
 // ④ 测试文件
 const testFiles = ['tests/test_safety.py', 'tests/test_readback.py', 'tests/test_send_gate.py',
-  'tests/test_fixture.py', 'scheduler/memory.test.mjs', 'lib/panel.test.mjs',
+  'tests/test_fixture.py', 'tests/test_panel_ui.py', 'scheduler/memory.test.mjs', 'lib/panel.test.mjs',
   'lib/panel_api.test.mjs', 'lib/duty_agent.test.mjs', 'lib/whale_tick.test.mjs',
   'lib/mood.test.mjs', 'lib/pet_bridge.test.mjs', 'lib/memory_layers.test.mjs', 'lib/memory_graph.test.mjs',
   'lib/memory_think.test.mjs',
